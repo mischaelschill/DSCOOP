@@ -1,13 +1,13 @@
 note
-	description: "{SEI_GC_DISABLER} disables the garbage collection, handles multiple requests by counting."
+	description: "{DSCOOP_GC_DISABLER} disables the garbage collection, handles multiple requests by counting."
 	author: "Mischael Schill"
 	date: "$Date$"
 	revision: "$Revision$"
 
 class
-	SEI_GC_DISABLER
+	DSCOOP_GC_DISABLER
 
-create {SEI_GC_SUPPORT}
+create {DSCOOP_GC_SUPPORT}
 	make
 
 feature

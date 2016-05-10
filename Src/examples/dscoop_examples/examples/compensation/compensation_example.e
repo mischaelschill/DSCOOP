@@ -56,12 +56,12 @@ feature
 feature
 	run_supplier (a_port: NATURAL_16)
 		local
-			sei: SEI
+			dscoop: DSCOOP
 		do
 			enable_debug
-			-- Create a SEI server
-			create sei
-			separate sei.server as c_server do
+			-- Create a DSCOOP server
+			create dscoop
+			separate dscoop.server as c_server do
 				-- Export the fork as the index object
 				c_server.set_index_object (create {separate POLITICIAN})
 				-- Start the server
@@ -91,13 +91,13 @@ feature
 			retry
 		end
 
-	connection: detachable SEI_CONNECTION
+	connection: detachable DSCOOP_CONNECTION
 
 feature {NONE}
 
 	get_supplier_object (a_supplier_address: ESTRING_8; a_supplier_port: NATURAL_16): detachable separate POLITICIAN
 		local
-			l_connection: SEI_CONNECTION
+			l_connection: DSCOOP_CONNECTION
 		do
 			create l_connection.make
 			l_connection.connect (a_supplier_address, a_supplier_port)
@@ -113,8 +113,8 @@ feature {NONE}
 
 	enable_debug
 		external
-			"C inline use eif_sei.h"
+			"C inline use eif_dscoop.h"
 		alias
-			"sei_set_print_debug_messages (EIF_TRUE)"
+			"dscoop_set_print_debug_messages (EIF_TRUE)"
 		end
 end

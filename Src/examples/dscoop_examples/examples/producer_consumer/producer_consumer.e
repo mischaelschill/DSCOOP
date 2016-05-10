@@ -69,9 +69,9 @@ feature
 feature
 	run_buffer (a_port: NATURAL_16)
 		local
-			l_common: SEI
+			l_common: DSCOOP
 		do
-			-- Create a SEI server
+			-- Create a DSCOOP server
 			create l_common
 			separate l_common.server as l_server do
 				-- Export the fork as the index object
@@ -84,7 +84,7 @@ feature
 	run_producer (a_buf_address: ESTRING_8; a_port: NATURAL_16)
 			-- Creates a new philosopher by connecting to two remote forks
 		local
-			connection: SEI_CONNECTION
+			connection: DSCOOP_CONNECTION
 			producer: PRODUCER
 		do
 			create connection.make
@@ -106,7 +106,7 @@ feature
 	run_consumer (a_buf_address: ESTRING_8; a_port: NATURAL_16)
 			-- Creates a new philosopher by connecting to two remote forks
 		local
-			connection: SEI_CONNECTION
+			connection: DSCOOP_CONNECTION
 			consumer: CONSUMER
 		do
 			create connection.make

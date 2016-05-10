@@ -8,7 +8,7 @@ class
 	POLITICIAN
 
 inherit
-	SEI_COMPENSATION_SUPPORT
+	DSCOOP_COMPENSATION_SUPPORT
 
 feature
 	say_something

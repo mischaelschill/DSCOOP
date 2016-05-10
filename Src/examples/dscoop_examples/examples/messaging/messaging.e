@@ -61,13 +61,13 @@ feature
 	run_test (a_port: NATURAL_16; a_server_address: ESTRING_8; a_server_port: NATURAL_16; a_name, a_recipient: ESTRING_8)
 			-- Runs the messaging test client
 		local
-			sei: SEI
+			dscoop: DSCOOP
 			l_client: separate MESSAGING_CLIENT
 			l_message: ESTRING_8
 		do
-			create sei
+			create dscoop
 			l_message := "TEST"
-			separate sei.server as c_server do
+			separate dscoop.server as c_server do
 				-- Start the server
 				c_server.start_incoming (a_port)
 			end
@@ -90,11 +90,11 @@ feature
 
 	run_server (a_port: NATURAL_16)
 		local
-			sei: SEI
+			dscoop: DSCOOP
 		do
-			-- Create a SEI server
-			create sei
-			separate sei.server as c_server do
+			-- Create a DSCOOP server
+			create dscoop
+			separate dscoop.server as c_server do
 				-- Export the fork as the index object
 				c_server.set_index_object (create {separate MESSAGING_SERVER}.make)
 				-- Start the server
@@ -105,7 +105,7 @@ feature
 feature {NONE} -- Implementation
 	get_server (a_supplier_address: ESTRING_8; a_supplier_port: NATURAL_16): detachable separate MESSAGING_SERVER
 		local
-			l_connection: SEI_CONNECTION
+			l_connection: DSCOOP_CONNECTION
 		do
 			create l_connection.make
 			l_connection.connect (a_supplier_address, a_supplier_port)

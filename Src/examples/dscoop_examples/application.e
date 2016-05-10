@@ -1,5 +1,5 @@
 note
-	description : "sei demo application"
+	description : "dscoop demo application"
 	date        : "$Date$"
 	revision    : "$Revision$"
 
@@ -16,7 +16,7 @@ feature {NONE} -- Initialization
 	make
 			-- Run application.
 		local
-			l_gc: SEI_GC_SUPPORT
+			l_gc: DSCOOP_GC_SUPPORT
 			l_found: BOOLEAN
 			i: INTEGER
 			l_string_list: ARRAYED_LIST[ESTRING_8]
@@ -59,7 +59,7 @@ feature {NONE} -- Initialization
 	cli_commands: LIST[CLI_COMMAND]
 		once
 			create {ARRAYED_LIST[CLI_COMMAND]}Result.make(9)
-			Result.extend (create {SEI_MICROBENCHMARKS})
+			Result.extend (create {DSCOOP_MICROBENCHMARKS})
 			Result.extend (create {LOGGING_EXAMPLE})
 			Result.extend (create {DINING_PHILOSOPHERS})
 			Result.extend (create {CHAT})
@@ -83,8 +83,8 @@ feature {NONE} -- Initialization
 
 	enable_debug
 		external
-			"C inline use eif_sei.h"
+			"C inline use eif_dscoop.h"
 		alias
-			"sei_set_print_debug_messages (EIF_TRUE)"
+			"dscoop_set_print_debug_messages (EIF_TRUE)"
 		end
 end

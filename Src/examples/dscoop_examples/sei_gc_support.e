@@ -1,14 +1,14 @@
 note
-	description: "{SEI_GC_SUPPORT} provides access to the garbage collector disabler."
+	description: "{DSCOOP_GC_SUPPORT} provides access to the garbage collector disabler."
 	author: "Mischael Schill"
 	date: "$Date$"
 	revision: "$Revision$"
 
 class
-	SEI_GC_SUPPORT
+	DSCOOP_GC_SUPPORT
 
 feature -- Access
-	disabler: separate SEI_GC_DISABLER
+	disabler: separate DSCOOP_GC_DISABLER
 		once ("PROCESS")
 			create Result.make
 		end

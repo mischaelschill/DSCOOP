@@ -1,11 +1,11 @@
 note
-	description: "{SEI_EXAMPLE_SUPPLIER} is providing some features to test calls."
+	description: "{DSCOOP_EXAMPLE_SUPPLIER} is providing some features to test calls."
 	author: "Mischael Schill"
 	date: "$Date$"
 	revision: "$Revision$"
 
 class
-	SEI_EXAMPLE_SUPPLIER
+	DSCOOP_EXAMPLE_SUPPLIER
 
 feature
 	command (a_argument: INTEGER)

@@ -96,7 +96,7 @@ feature
 		end
 
 feature
-	sei: SEI
+	dscoop: DSCOOP
 		attribute
 			create Result
 		end
@@ -105,8 +105,8 @@ feature
 		local
 			l_stage: separate PIPELINE_STAGE
 		do
-			-- Create a SEI server
-			separate sei.server as c_server do
+			-- Create a DSCOOP server
+			separate dscoop.server as c_server do
 				-- Export the fork as the index object
 				create l_stage
 				c_server.set_index_object (l_stage)
@@ -176,7 +176,7 @@ feature
 			l_finished: BOOLEAN
 			l_formatter: FORMAT_STRING
 		do
-			separate sei.server as c_server do
+			separate dscoop.server as c_server do
 				-- Export the fork as the index object
 				create l_stage
 				c_server.set_index_object (l_stage)
@@ -211,7 +211,7 @@ feature
 			l_finished: BOOLEAN
 		do
 			create l_stage
-			separate sei.server as c_server do
+			separate dscoop.server as c_server do
 				-- Export the fork as the index object
 				create l_stage
 				c_server.set_index_object (l_stage)
@@ -243,7 +243,7 @@ feature
 			l_finished: BOOLEAN
 		do
 			create l_stage
-			separate sei.server as c_server do
+			separate dscoop.server as c_server do
 				-- Export the fork as the index object
 				create l_stage
 				c_server.set_index_object (l_stage)
@@ -271,7 +271,7 @@ feature
 feature {NONE} -- Implementation
 	get_stage (a_supplier_address: ESTRING_8; a_supplier_port: NATURAL_16): detachable separate PIPELINE_STAGE
 		local
-			l_connection: SEI_CONNECTION
+			l_connection: DSCOOP_CONNECTION
 		do
 			create l_connection.make
 			l_connection.connect (a_supplier_address, a_supplier_port)

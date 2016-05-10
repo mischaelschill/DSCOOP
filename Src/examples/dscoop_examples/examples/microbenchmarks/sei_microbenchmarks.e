@@ -1,11 +1,11 @@
 note
-	description: "{SEI_MICROBENCHMARKS} runs some very simple benchmarks."
+	description: "{DSCOOP_MICROBENCHMARKS} runs some very simple benchmarks."
 	author: "Mischael Schill"
 	date: "$Date$"
 	revision: "$Revision$"
 
 class
-	SEI_MICROBENCHMARKS
+	DSCOOP_MICROBENCHMARKS
 
 inherit
 	DATETIME_SUPPORT
@@ -93,13 +93,13 @@ feature
 feature
 	start_supplier (a_port: NATURAL_16)
 		local
-			sei: SEI
+			dscoop: DSCOOP
 		do
-			-- Create a SEI server
-			create sei
-			separate sei.server as c_server do
+			-- Create a DSCOOP server
+			create dscoop
+			separate dscoop.server as c_server do
 				-- Export the fork as the index object
-				c_server.set_index_object (create {separate SEI_EXAMPLE_SUPPLIER})
+				c_server.set_index_object (create {separate DSCOOP_EXAMPLE_SUPPLIER})
 				-- Start the server
 				c_server.start_incoming (a_port)
 			end
@@ -205,19 +205,19 @@ feature
 		end
 
 	time: NATURAL_64
-	connection: detachable SEI_CONNECTION
+	connection: detachable DSCOOP_CONNECTION
 
 feature {NONE}
-	get_supplier_object (a_supplier_address: ESTRING_8; a_supplier_port: NATURAL_16): detachable separate SEI_EXAMPLE_SUPPLIER
+	get_supplier_object (a_supplier_address: ESTRING_8; a_supplier_port: NATURAL_16): detachable separate DSCOOP_EXAMPLE_SUPPLIER
 		local
-			l_connection: SEI_CONNECTION
+			l_connection: DSCOOP_CONNECTION
 		do
 			create l_connection.make
 			l_connection.connect (a_supplier_address, a_supplier_port)
 			-- Checking that the connection is established
 			if
 				l_connection.is_initialized and then
-				attached {separate SEI_EXAMPLE_SUPPLIER} l_connection.get_remote_index as supplier
+				attached {separate DSCOOP_EXAMPLE_SUPPLIER} l_connection.get_remote_index as supplier
 			then
 				Result := supplier
 				connection := l_connection

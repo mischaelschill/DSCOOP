@@ -13,11 +13,11 @@ inherit
 feature
 	run_log_file (a_port: NATURAL_16)
 		local
-			sei: SEI
+			dscoop: DSCOOP
 		do
-			-- Create a SEI server
-			create sei
-			separate sei.server as l_server do
+			-- Create a DSCOOP server
+			create dscoop
+			separate dscoop.server as l_server do
 				-- Export the fork as the index object
 				l_server.set_index_object (create {separate LOG_FILE}.make)
 				-- Start the server
@@ -29,8 +29,8 @@ feature
 		require
 			a_clients > 0
 		local
-			connection: SEI_CONNECTION
-			l_connections: ARRAYED_LIST[separate SEI_CONNECTION]
+			connection: DSCOOP_CONNECTION
+			l_connections: ARRAYED_LIST[separate DSCOOP_CONNECTION]
 			l_log_files: ARRAYED_LIST[separate LOG_FILE]
 			l_loggers: ARRAYED_LIST[separate LOGGER]
 			i: INTEGER

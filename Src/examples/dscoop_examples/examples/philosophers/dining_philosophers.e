@@ -64,7 +64,7 @@ feature
 	run_philosopher (a_name, a_left_fork_address, a_right_fork_address: ESTRING_8; a_left_fork_port, a_right_fork_port: NATURAL_16; a_count: NATURAL)
 			-- Creates a new philosopher by connecting to two remote forks
 		local
-			left_connection, right_connection: SEI_CONNECTION
+			left_connection, right_connection: DSCOOP_CONNECTION
 			philosopher: PHILOSOPHER
 		do
 			create left_connection.make
@@ -91,11 +91,11 @@ feature
 
 	run_fork (a_port: NATURAL_16)
 		local
-			sei: SEI
+			dscoop: DSCOOP
 		do
-			-- Create a SEI server
-			create sei
-			separate sei.server as c_server do
+			-- Create a DSCOOP server
+			create dscoop
+			separate dscoop.server as c_server do
 				-- Export the fork as the index object
 				c_server.set_index_object (create {separate FORK})
 				-- Start the server

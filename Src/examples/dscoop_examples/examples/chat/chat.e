@@ -80,11 +80,11 @@ feature
 
 	run_server (a_port: NATURAL_16)
 		local
-			sei: SEI
+			dscoop: DSCOOP
 		do
-			-- Create a SEI server
-			create sei
-			separate sei.server as c_server do
+			-- Create a DSCOOP server
+			create dscoop
+			separate dscoop.server as c_server do
 				-- Export the fork as the index object
 				c_server.set_index_object (create {separate CHAT_SERVER})
 				-- Start the server

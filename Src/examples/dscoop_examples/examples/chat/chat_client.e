@@ -10,7 +10,7 @@ class CHAT_CLIENT
 		persona: detachable separate PERSONA
 			-- The remore representation of the client
 
-		connection: separate SEI_CONNECTION
+		connection: separate DSCOOP_CONNECTION
 			attribute
 				create Result.make
 			end
