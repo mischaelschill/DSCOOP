@@ -253,6 +253,34 @@ feature {INTERNAL_COMPILER_STRING_EXPORTER} -- Settings
 			routines.put (new_signature (type, rout_name, argument_types))
 		end
 
+	add_routine_from_feature (a_feature: FEATURE_I; a_in_class: CLASS_TYPE)
+			-- Add the routine of feature `a_feature' as it appears in `a_in_class'
+		require
+			a_feature_exists: a_feature /= Void
+			a_in_class_exists: a_in_class /= Void
+		local
+			l_arg_array: ARRAY[STRING_8]
+			i : INTEGER
+		do
+			if a_feature.has_arguments then
+				create l_arg_array.make_filled ("", 1, a_feature.arguments.count + 1)
+				from
+					i := 1
+				until
+					i > a_feature.arguments.count
+				loop
+					l_arg_array[i + 1] := a_feature.arguments[i].adapted_in (a_in_class).c_type.c_string
+					i := i + 1
+				end
+			else
+				create l_arg_array.make_filled ("", 1, 1)
+			end
+			l_arg_array[1] := a_in_class.type.c_type.c_string;
+
+			routines.put (new_signature (a_feature.type.adapted_in (a_in_class).c_type.c_string, a_feature.encoded_feature_name (a_in_class), l_arg_array))
+		end
+
+
 	add_wrapper_with_signature (type: STRING; rout_name: STRING; argument_types: ARRAY [STRING])
 			-- Add one routine of name `rout_name' and C type `type' and with argument types
 			-- `arguments_types

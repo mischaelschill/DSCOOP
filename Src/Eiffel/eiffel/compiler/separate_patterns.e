@@ -140,6 +140,40 @@ feature -- Modification
 			end
 		end
 
+	put_artificial (a_feature: FEATURE_I)
+			-- Register a stub to call `a_feature', add its declaration to a header file and generate its name to the current generation buffer.
+		local
+			a: detachable SPECIAL [TYPE_C]
+			i: C_PATTERN_INFO
+			buffer: GENERATION_BUFFER
+			k: like pattern_kind_attribute
+		do
+			if a_feature.has_arguments then
+				create a.make_empty (a_feature.argument_count)
+				across
+					a_feature.arguments as iter
+				loop
+					a.extend (iter.item.c_type)
+				end
+			end
+			create i.make (create {C_PATTERN}.make (a_feature.type.c_type, a))
+			i.set_c_pattern_id (patterns.count + 1)
+			patterns.put (i)
+			check attached patterns.item (i) as p then
+				if a_feature.is_attribute then
+					k := pattern_kind_attribute
+				else
+					k := pattern_kind_routine
+				end
+				buffer := context.header_buffer
+				buffer.put_new_line
+				buffer.put_string ("extern ")
+				generate_pattern_signature (p, k, buffer)
+				buffer.put_character (';')
+				generate_pattern_name (p, k, context.buffer)
+			end
+		end
+
 feature -- Generation
 
 	generate

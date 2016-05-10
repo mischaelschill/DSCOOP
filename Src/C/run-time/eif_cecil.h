@@ -241,6 +241,51 @@ struct cecil_info {
 	EIF_TYPE_INDEX *dynamic_types;	/* Dynamic type for each meta-type, if generics, otherwise NULL. */
 };
 
+#ifdef EIF_THREADS
+struct eif_scoop_call_data;
+#endif
+
+struct eif_signature {
+#ifdef EIF_THREADS
+#ifndef WORKBENCH
+	void (* scoop_pattern) (struct eif_scoop_call_data *); // The pattern to call the feature by using a struct eif_scoop_call_data*
+#endif
+#endif
+	const EIF_ENCODED_TYPE *argument_types; // The types of the arguments (may be 0 if argument_count == 0)
+	EIF_ENCODED_TYPE result_type; // The type of the result (0 indicates a procedure)
+};
+
+struct eif_define {
+	const char* name;
+	const struct eif_signature* signature;
+	EIF_PROCEDURE routine; // The actual routine, needs casting, NULL if deferred/not visible or an attribute
+#ifdef WORKBENCH
+	EIF_NATURAL_32 feature_id; // The routine id, only generated in workbench mode
+#endif
+};
+
+struct eif_rename {
+	const char* old_name;
+	const char* new_name;
+};
+
+struct eif_inherit {
+	const struct eif_rename* renames;
+	const char** selects;
+	const char** undefines;
+	const EIF_NATURAL_16 renames_count;
+	const EIF_NATURAL_16 selects_count;
+	const EIF_NATURAL_16 undefines_count;
+	const EIF_TYPE_INDEX parent;
+};
+
+struct eif_ce_info {
+	const EIF_NATURAL_16 inherits_count;
+	const EIF_NATURAL_16 defines_count;
+	const struct eif_inherit* inherits;
+	const struct eif_define* defines;
+};
+
 /*
  * 	Obsolete Macros  
  */
@@ -267,6 +312,8 @@ struct cecil_info {
 
 #define	EIF_OBJ	EIF_OBJECT						/* Use EIF_OBJECT instead */
 
+#define EIF_DTYPE_LIKE_CURRENT 0xFFFE
+
 /*
  * Functions and variables declarations.
  */
@@ -287,7 +334,27 @@ RT_LNK int eifattrtype (char *attr_name, EIF_TYPE_ID ftype);
 RT_LNK EIF_OBJECT eifcreate(EIF_TYPE_ID ftype);				/* Object creation */
 
 RT_LNK EIF_REFERENCE_FUNCTION eifref(char *routine, EIF_TYPE_ID ftype);				/* Eiffel function returning ANY */
-
+/**
+ * This function finds the definition of a feature. The feature is identified by
+ * supplying the name of the feature, the type of the target and optionally the
+ * context type of the the feature name (where the feature is known by this name).
+ * The resulting definition should only be accessed through the eif_feature_* 
+ * routines, since some of the data is compressed.
+ */
+RT_LNK struct eif_define eif_find_feature(const char *name, EIF_TYPE_ID ftype, EIF_TYPE_ID context);
+RT_LNK const char* eif_feature_name(struct eif_define* feature_definition);
+RT_LNK EIF_TYPE_ID eif_feature_type(struct eif_define* routine_definition);
+RT_LNK int eif_feature_argument_count(struct eif_define* feature_definition);
+RT_LNK EIF_TYPE_ID eif_feature_argument_type(struct eif_define* feature_definition, int argno);
+#ifdef WORKBENCH
+RT_LNK EIF_NATURAL_32 eif_feature_routine_id(struct eif_define* feature_definition, int argno);
+#else
+RT_LNK EIF_PROCEDURE eif_feature_routine(struct eif_define* feature_definition, int argno);
+#ifdef EIF_THREADS
+RT_LNK void (*eif_feature_scoop_pattern(struct eif_define* feature_definition, int argno))(struct eif_scoop_call_data*);
+#endif
+#endif
+RT_LNK struct eif_define eif_find_feature(const char *routine_name, EIF_TYPE_ID ftype, EIF_TYPE_ID context);
 RT_LNK EIF_TYPE_ID eiftype(EIF_OBJECT object);			/* Give dynamic type of EIF_OBJECT. Obsolete, use "eif_type_by_object". */
 RT_LNK EIF_TYPE_ID eif_type_by_reference (EIF_REFERENCE object);
 #define eif_type_by_object(obj)	eiftype(obj)			/* Give dynamic type of EIF_OBJECT */

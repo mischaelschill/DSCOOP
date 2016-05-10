@@ -555,7 +555,7 @@ feature {NONE} -- Implementation
 								create renaming.make (1)
 							end
 							renaming.put (create {RENAMING}.make (a_name_id, a_name_id,
-								inherited_feature.has_convert_mark), inherited_feature.feature_name_id)
+								inherited_feature.has_convert_mark, inherited_feature.feature_name_id), inherited_feature.feature_name_id)
 						end
 					end
 				end

@@ -76,12 +76,12 @@ struct cnode {
 		 * identify the the creation procedure for expanded types.
 		 */
 	int32 cn_creation_id;
-	const struct ctable cn_cecil;		/* Cecil hash table */
+	const struct eif_ce_info ce_info;
 #else
 	void (*cn_inv)();			/* Pointer on invariant routine if any */
 	const long *cn_offsets;		/* Attribute offsets */
 #endif
-	const char *cn_version;			/* Version of the class, used for storable. */
+	const char *cn_version;			/* Version of the class, used for storable. */	
 };
 
 /* Values used to encode the type of each attribute. Dynamic type is encoded on

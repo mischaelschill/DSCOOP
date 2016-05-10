@@ -1791,6 +1791,8 @@ end;
 			if a_add_to_table then
 				assign_feature_id_and_insert (inherit_info)
 			end
+
+			inherit_info.a_feature.set_parent_type (inherit_info.parent.parent_type)
 		end
 
 	assign_feature_id_and_insert (a_inherit_info: INHERIT_INFO)

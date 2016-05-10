@@ -447,7 +447,8 @@ rt_public void (**egc_copy)(EIF_REFERENCE, EIF_REFERENCE);
 rt_public EIF_BOOLEAN (**egc_is_equal)(EIF_REFERENCE, EIF_REFERENCE);
 rt_public void (**egc_ecreate)(EIF_REFERENCE, EIF_REFERENCE);
 rt_public void (**egc_exp_create)(EIF_REFERENCE);
-rt_public struct ctable *egc_ce_rname;
+rt_public struct ctable *egc_ce_rname; // TODO: Remove this
+rt_public const struct eif_ce_info *egc_ce_routines;
 rt_public long *egc_fnbref ;
 rt_public long *egc_fsize;
 rt_public EIF_TYPE_INDEX **egc_routines_types;

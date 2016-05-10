@@ -90,13 +90,6 @@ feature {NONE} -- Initialization
 				-- Use names heap created from parser library.
 			names := Workbench.names_heap
 
-				-- Set up working environment to use current as SYSTEM_I instance.
-			Workbench.set_system (Current)
-
-
-				-- Creation of all the servers.
-			server_make
-
 				-- Creation of the system hash table
 			create class_types.make (1, System_chunk)
 			create new_classes.make
@@ -123,6 +116,9 @@ feature {NONE} -- Initialization
 				-- Pattern table creation
 			create pattern_table.make
 			create separate_patterns.make
+
+				-- Routine information table creation
+			create routine_information.make (separate_patterns)
 
 				-- Freeze control sets creation
 			create degree_minus_1.make
@@ -151,6 +147,13 @@ feature {NONE} -- Initialization
 
 				-- Create test system
 			create test_system
+
+				-- Set up working environment to use current as SYSTEM_I instance.
+			Workbench.set_system (Current)
+
+				-- Creation of all the servers.
+			server_make
+
 		end
 
 feature -- Counters
@@ -234,6 +237,9 @@ feature -- Properties
 
 	separate_patterns: SEPARATE_PATTERNS
 			-- Patterns for separate feature calls
+
+	routine_information: RUNTIME_ROUTINE_SIGNATURES
+			-- Information about routines
 
 	address_table: ADDRESS_TABLE
 			-- Generate encapsulation of function pointers ($ operator)
@@ -3805,29 +3811,29 @@ feature -- Generation
 			deg_output.put_degree_output (degree_message, 9, 10)
 			generate_reference_table
 
-				-- Cecil structures generation
-			deg_output.put_degree_output (degree_message, 8, 10)
-			generate_cecil
-
 				-- Generation of the skeletons
-			deg_output.put_degree_output (degree_message, 7, 10)
+			deg_output.put_degree_output (degree_message, 8, 10)
 			generate_skeletons
 			generate_expanded_structures
 
 				-- Generation of the parent table
-			deg_output.put_degree_output (degree_message, 6, 10)
+			deg_output.put_degree_output (degree_message, 7, 10)
 			generate_parent_tables
 
 				-- Generate plug with run-time.
 				-- Has to be done before `generate_routine_table' because
 				-- this is were we mark `used' the attribute table of `lower' and
 				-- `area' used with `array_optimization'.
-			deg_output.put_degree_output (degree_message, 5, 10)
+			deg_output.put_degree_output (degree_message, 6, 10)
 			t.generate_plug
 
 				-- Routine table generation
-			deg_output.put_degree_output (degree_message, 4, 10)
+			deg_output.put_degree_output (degree_message, 5, 10)
 			generate_routine_table
+
+				-- Cecil structures generation
+			deg_output.put_degree_output (degree_message, 4, 10)
+			generate_cecil
 
 				-- Generate edynlib with run-time.
 			deg_output.put_degree_output (degree_message, 3, 10)
@@ -4453,6 +4459,26 @@ feature -- Generation
 			parents_file.close;
 		end;
 
+	generate_cecil_class_information (buffer, header_buffer: GENERATION_BUFFER)
+		local
+			l_signatures: RUNTIME_ROUTINE_SIGNATURES
+			l_generated_string_arrays: HASH_TABLE[INTEGER, HASHABLE_ARRAYED_LIST[STRING_8]];
+			l_generated_renaming_arrays: HASH_TABLE[INTEGER, HASHABLE_ARRAYED_LIST[TUPLE[STRING_8, STRING_8]]]
+		do
+			create l_signatures.make (separate_patterns)
+			l_signatures.set_buffer (generation_buffer)
+			create l_generated_string_arrays.make (32)
+			create l_generated_renaming_arrays.make (32)
+
+			across
+				class_types as iter
+			loop
+				if attached iter.item as cl then
+					cl.generate_reflection_data (buffer, header_buffer, l_signatures, l_generated_string_arrays, l_generated_renaming_arrays)
+				end
+			end
+		end
+
 	generate_skeletons
 			-- Generate skeletons of class types
 		local
@@ -4462,11 +4488,13 @@ feature -- Generation
 			a_class: CLASS_C
 			final_mode: BOOLEAN
 			types: TYPE_LIST
-				-- cltype_array is indexed by `id' not by `type_id'
-				-- as `class_types'
-			cltype_array: ARRAY [CLASS_TYPE]
 			skeleton_file: INDENT_FILE
 			buffer: GENERATION_BUFFER
+			tmp_buffer: GENERATION_BUFFER
+
+			l_feat, l_orig: FEATURE_I
+			l_name: STRING_8
+			l_defines_count: INTEGER
 		do
 			final_mode := byte_context.final_mode
 
@@ -4479,40 +4507,16 @@ feature -- Generation
 
 			buffer.put_string ("#include %"eif_eiffel.h%"")
 
+			buffer.start_c_specific_code
+
 			if not final_mode then
-					-- Hash table extern declaration in workbench mode
-				buffer.start_c_specific_code
-
-				class_array := classes
-				nb := class_counter.count
-				from i := 1 until i > nb loop
-					a_class := class_array.item (i)
-					if a_class /= Void then
-						j := a_class.class_id
-						if a_class.has_visible then
-							buffer.put_string ("extern const char *cl")
-							buffer.put_integer (j)
-							buffer.put_string ("[];%N")
-							from
-								types := a_class.types
-								types.start
-							until
-								types.after
-							loop
-								buffer.put_string ("extern const uint32 cr")
-								buffer.put_integer (types.item.type_id)
-								buffer.put_string ("[];%N")
-								types.forth
-							end
-						end
-					end
-					i := i + 1
-				end
-				buffer.put_new_line
-
-				create cltype_array.make (1, static_type_id_counter.count)
-			else
-				buffer.start_c_specific_code
+				-- We do not have a header, so we first generate the includes, and then append the content
+				create tmp_buffer.make (16*1024)
+				Extern_declarations.wipe_out
+				generate_cecil_class_information (tmp_buffer, buffer)
+				Extern_declarations.generate (buffer)
+				buffer.put_buffer (tmp_buffer)
+				tmp_buffer := Void
 			end
 
 				-- Generates the skeleton data used to fill skeleton.
@@ -4527,9 +4531,6 @@ feature -- Generation
 					-- Classes could be removed
 				if cl_type /= Void then
 					cl_type.generate_skeleton1 (buffer)
-					if not final_mode then
-						cltype_array.put (cl_type, cl_type.static_type_id)
-					end
 				end
 				i := i + 1
 			end
@@ -4553,20 +4554,28 @@ feature -- Generation
 						else
 								-- Type not inserted in system because it was coming
 								-- from a precompiled library.
-							buffer.put_string ("%N{0L, 0L,%"INVALID_TYPE%",NULL,NULL,NULL,NULL,(uint16)0L,NULL,NULL}")
+
+								-- 	long cn_nbattr;	long cn_persistent_nbattr; const char *cn_generator; const char **cn_names;	const uint32 *cn_types;	const uint16 *cn_attr_flags; const EIF_TYPE_INDEX **cn_gtypes;	
+								--	uint16 cn_flags; void (*cn_inv)(); const long *cn_offsets; const char *cn_version;
+
+
+							buffer.put_string ("%N{0L, 0L,%"INVALID_TYPE%",NULL,NULL,NULL,NULL,(uint16)0L,NULL,NULL,0}")
 						end
 					else
 						cl_type.generate_skeleton2 (buffer)
 					end
 				else
 					if final_mode then
-						buffer.put_string ("%N{0L, 0L,%"INVALID_TYPE%",NULL,NULL,NULL,NULL,(uint16)0L,NULL,NULL}")
+							buffer.put_string ("%N{0L, 0L,%"INVALID_TYPE%",NULL,NULL,NULL,NULL,(uint16)0L,NULL,NULL,0}")
 					else
+						-- 	long cn_nbattr;	long cn_persistent_nbattr; const char *cn_generator; const char **cn_names;	const uint32 *cn_types;	const uint16 *cn_attr_flags; const EIF_TYPE_INDEX **cn_gtypes; uint16 cn_flags;	
+						--	const int32 *cn_attr; long cn_size;	long cn_nbref; int32 cn_creation_id; const struct ctable cn_cecil;	const char *cn_version;
+
 						buffer.put_string
 							("%N{%N0L,%N0L,%N%"INVALID_TYPE%",%NNULL,%NNULL,%N%
 							%NULL,%NNULL,%N(uint16) 0L,%NNULL,%N0L,%N0L,%N%
 							%(int32) 0L,%N%
-							%{(int32) 0, (int) 0, NULL, NULL}, NULL}")
+							%, {0, 0, NULL, NULL}, 0}")
 					end
 				end
 				buffer.put_character (',')
@@ -4666,19 +4675,31 @@ feature -- Generation
 			buffer, header_buffer: GENERATION_BUFFER
 			l_has_visible: BOOLEAN
 			generated_wrappers: SEARCH_TABLE [STRING]
+
+			l_table: ARRAYED_LIST[FEATURE_I]
+			l_ftab: FEATURE_TABLE
+			l_feature: FEATURE_I
+			l_first: BOOLEAN
+			j, l_count: INTEGER
+			l_signatures: RUNTIME_ROUTINE_SIGNATURES
+			l_generated_string_arrays: HASH_TABLE[INTEGER, HASHABLE_ARRAYED_LIST[STRING_8]];
+			l_generated_renaming_arrays: HASH_TABLE[INTEGER, HASHABLE_ARRAYED_LIST[TUPLE[STRING_8, STRING_8]]]
 		do
 				-- Clear buffers for current generation
 			buffer := generation_buffer
 			buffer.clear_all
 			header_buffer := header_generation_buffer
 			header_buffer.clear_all
+			routine_information.wipe_out
 
 			final_mode := byte_context.final_mode
 
 			buffer.put_string ("#include %"eif_eiffel.h%"")
 			buffer.put_string ("%N#include %"eif_cecil.h%"")
 			if final_mode then
+				buffer.put_string ("%N#include %"eoffsets.h%"")
 				buffer.put_string ("%N#include %"ececil.h%"")
+				header_buffer.put_string ("#include %"eif_eiffel.h%"")
 			end
 
 			buffer.start_c_specific_code
@@ -4686,19 +4707,43 @@ feature -- Generation
 			create generated_wrappers.make (10)
 			class_array := classes
 			nb := class_counter.count
-			from i := 1 until i > nb loop
+			from i := 1 until i > nb or l_has_visible loop
 				a_class := class_array.item (i)
 				if a_class /= Void and then a_class.has_visible then
 					l_has_visible := True
-					set_current_class (a_class)
-					a_class.generate_cecil (generated_wrappers)
 				end
 				i := i + 1
 			end
 
+			header_buffer.put_string (once "%Nconst struct eif_ce_info egc_ce_routines_init[];%N")
+
 			if final_mode then
+				if l_has_visible then
+					-- Generate the needed type information
+					generate_cecil_class_information (buffer, header_buffer)
+
+					-- This array contains information on all types
+					buffer.put_string (once "%Nconst struct eif_ce_info egc_ce_routines_init[] = {%N%T")
+					from
+						i := 1
+						nb := Type_id_counter.value
+					until
+						i > nb
+					loop
+						cl_type := class_types.item (i)
+						cl_type.generate_reflection_struct (buffer)
+						i := i + 1
+						if i <= nb then
+							buffer.put_three_character (',', '%N', '%T')
+						end
+					end
+					buffer.put_new_line
+					buffer.put_three_character ('}', ';', '%N')
+				else
+					buffer.put_string (once "%Nconst struct eif_ce_info egc_ce_routines_init[] = {{0, 0, NULL, NULL}};")
+				end
+
 					-- Extern declarations for previous file
-				header_buffer.put_string ("#include %"eif_eiffel.h%"")
 				header_buffer.start_c_specific_code
 				Extern_declarations.generate (header_buffer)
 				header_buffer.end_c_specific_code
@@ -4716,31 +4761,6 @@ feature -- Generation
 				create header_file.make_open_write (dir_name.extended ("ececil.h"))
 				header_buffer.put_in_file (header_file)
 				header_file.close
-
-				if not l_has_visible then
-					buffer.put_string ("%Nstruct ctable egc_ce_rname_init[")
-					buffer.put_integer (Type_id_counter.value)
-					buffer.put_three_character (']', ';', '%N')
-				else
-					buffer.put_string ("%Nstruct ctable egc_ce_rname_init[] = {%N")
-					from
-						i := 1
-						nb := Type_id_counter.value
-					until
-						i > nb
-					loop
-						cl_type := class_types.item (i)
-						if cl_type /= Void and then cl_type.associated_class.has_visible then
-							cl_type.generate_cecil (buffer)
-						else
-							buffer.put_string (once "%N{(int32) 0, (int) 0, (char **) 0, (char *) 0}")
-						end
-						buffer.put_character (',')
-						i := i + 1
-					end
-					buffer.put_new_line
-					buffer.put_three_character ('}', ';', '%N')
-				end
 			end
 
 			create_cecil_tables
@@ -6147,7 +6167,7 @@ feature {NONE} -- External features
 note
 	date: "$Date$"
 	revision: "$Revision$"
-	copyright:	"Copyright (c) 1984-2015, Eiffel Software"
+	copyright:	"Copyright (c) 1984-2016, Eiffel Software"
 	license:	"GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options:	"http://www.eiffel.com/licensing"
 	copying: "[

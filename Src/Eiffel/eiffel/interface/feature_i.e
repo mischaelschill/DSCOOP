@@ -15,7 +15,7 @@ deferred class FEATURE_I
 inherit
 	IDABLE
 
-	SHARED_WORKBENCH
+	SHARED_DECLARATIONS
 
 	SHARED_SERVER
 		export
@@ -88,6 +88,8 @@ inherit
 	INTERNAL_COMPILER_STRING_EXPORTER
 
 	SHARED_DEGREES
+
+	SHARED_GENERATION
 
 feature -- Access
 
@@ -454,6 +456,12 @@ feature -- Access
 			end
 		end
 
+	encoded_feature_name (a_class_type: CLASS_TYPE): STRING_8
+			-- The (C) name of this feature in the generated C code of class `a_class_type'
+		do
+			Result := Encoder.feature_name (a_class_type.type_id, body_index)
+		end
+
 	is_inline_agent: BOOLEAN
 			-- is the feature an inline agent
 		do
@@ -494,6 +502,9 @@ feature -- Access
 		do
 			Result := not (enclosing_feature.is_invariant or else is_fake_inline_agent)
 		end
+
+	parent_type: CL_TYPE_A
+		-- The type of the class from which the feature was inherited
 
 feature {INTERNAL_COMPILER_STRING_EXPORTER} -- Access
 
@@ -1061,6 +1072,14 @@ feature -- Setting
 			-- Set `is_type_evaluation_delayed' to `v'.
 		do
 			feature_flags := feature_flags.set_bit_with_mask (v, is_type_evaluation_delayed_mask)
+		end
+
+	set_parent_type (v: CL_TYPE_A)
+			-- Set `parent_type' to `v'.
+		do
+			parent_type := v
+		ensure
+			parent_type ~ v
 		end
 
 feature {INTERNAL_COMPILER_STRING_EXPORTER} -- Setting
@@ -2032,10 +2051,10 @@ feature -- Polymorphism
 
 feature -- Signature instantiation
 
-	instantiated (parent_type: TYPE_A): FEATURE_I
-			-- Instantiated signature in context of `parent_type'.
+	instantiated (a_parent_type: TYPE_A): FEATURE_I
+			-- Instantiated signature in context of `a_parent_type'.
 		require
-			good_argument: parent_type /= Void
+			good_argument: a_parent_type /= Void
 		local
 			i, nb: INTEGER
 			old_type, new_type: TYPE_A
@@ -2044,7 +2063,7 @@ feature -- Signature instantiation
 			Result := Current
 				-- Instantiation of the type
 			old_type := type
-			new_type := old_type.instantiated_in (parent_type)
+			new_type := old_type.instantiated_in (a_parent_type)
 			if new_type /= old_type then
 				Result := twin
 				Result.set_type (new_type, assigner_name_id)
@@ -2061,7 +2080,7 @@ feature -- Signature instantiation
 				i > nb
 			loop
 				old_type := l_arguments.i_th (i)
-				new_type := old_type.instantiated_in (parent_type)
+				new_type := old_type.instantiated_in (a_parent_type)
 				if old_type /= new_type then
 					if Result.arguments = arguments then
 						if Result = Current then
@@ -3307,6 +3326,164 @@ feature {NONE} -- log file
 
 feature -- C code generation
 
+	needs_definition_generation (class_type: CLASS_TYPE): BOOLEAN
+			-- Whether we need to generate a definition for reflection within type `class_type'
+		local
+			l_class: CLASS_C
+			l_is_visible, l_was_visible: BOOLEAN
+			l_was_used: BOOLEAN
+			i: INTEGER
+			parent_class: detachable CLASS_C
+			parent_class_type: detachable CL_TYPE_A
+			parent_feature: detachable FEATURE_I
+			l_other: detachable FEATURE_I
+		do
+			l_class := class_type.associated_class
+			if attached parent_type as l_parent_type then
+				-- Checking whether the ancestor feature is visible
+				l_was_visible := l_parent_type.base_class.visible_level.is_visible (
+						l_parent_type.base_class.feature_of_body_index (body_index), l_parent_type.class_id)
+				l_was_used := l_parent_type.base_class.feature_of_body_index (body_index).used
+			end
+			l_is_visible := l_class.visible_level.is_visible (Current, l_class.class_id)
+
+			-- The precursor was used, and the current feature has changes. Therefore we need to generate (at least) a stub
+			Result := l_was_used and then written_class = l_class
+
+			if feature_name ~ "has_new_data" then print ("class_type: " + class_type.type.name + "%N") end
+			if feature_name ~ "has_new_data" then print ("l_was_used: " + l_was_used.out + "%N") end
+			if feature_name ~ "has_new_data" then print ("used: " + used.out + "%N") end
+			if not Result and (used or is_attribute) then
+				Result := written_class = l_class
+				if feature_name ~ "has_new_data" then print ("l_class: " + l_class.name + "%N") end
+				if feature_name ~ "has_new_data" then print ("written_class: " + written_class.name + "%N") end
+
+				if not Result then
+					across
+						class_type.associated_class.parents as iter
+					loop
+						l_other := iter.item.base_class.feature_of_body_index (body_index)
+						if attached l_other then
+							parent_class_type := iter.item
+							parent_class := parent_class_type.base_class
+							parent_feature := l_other
+							if feature_name ~ "has_new_data" then print ("parent_class_type: " + parent_class_type.name + "%N") end
+							if feature_name ~ "has_new_data" then print ("parent_feature: " + l_other.feature_name + "%N") end
+						end
+					end
+				end
+
+				-- Or if the feature changed its signature
+				if not Result and has_return_value then
+					Result := not type.is_like_current
+					if attached parent_feature as f and then attached f.type.instantiated_in(parent_class_type) as pt then
+
+						Result := Result and not pt.same_as(type)
+						if
+							pt.is_valid_context_type (class_type.type) and then
+							pt.has_associated_class_type (class_type.type) and then
+							type.has_associated_class_type (class_type.type)
+						then
+							Result := Result and pt.type_id (class_type.type) /= type.type_id (class_type.type)
+						end
+					end
+				end
+
+				if not Result and has_arguments then
+					from
+						i := arguments.lower
+					until
+						Result or i > arguments.upper
+					loop
+						Result := not arguments[i].is_like_current
+						if attached parent_feature as f and then attached f.arguments[i].instantiated_in(parent_class_type) as pt then
+
+							Result := Result and not pt.same_as(arguments[i])
+							if
+								pt.is_valid_context_type (class_type.type) and then
+								pt.has_associated_class_type (class_type.type) and then
+								arguments[i].has_associated_class_type (class_type.type)
+							then
+								Result := Result and pt.type_id (class_type.type) /= arguments[i].type_id (class_type.type)
+							end
+						end
+						i := i + 1
+					end
+				end
+
+				-- Or if there was some renaming or undefining. Redefining is catched by checking written_class above
+				if not Result then
+					Result :=
+							across l_class.computed_parents as iter some
+								-- Theoretically, renaming does not need a new definition, but then it is necessary for all parent classes to be visible too
+								iter.item.has_renaming and then across iter.item.renaming as iter2 some iter2.item.feature_name_id = feature_name_id end
+						 		or else iter.item.has_undefining and then iter.item.undefining.has (feature_name_id)
+								or else attached iter.item.selecting and then iter.item.selecting.has (feature_name_id)
+							end
+				end
+			end
+
+			Result := Result and then (is_constant and then not is_process_or_thread_relative_once implies l_class.visible_level.is_visible (Current, l_class.class_id))
+			if feature_name ~ "has_new_data" then print ("Result: " + Result.out + "%N") end
+		end
+
+	generate_cecil_definition (class_type: CLASS_TYPE; a_sigs: RUNTIME_ROUTINE_SIGNATURES; buffer: GENERATION_BUFFER)
+			-- Generates a definition for reflection. `class_type' is the class for the definition.
+			-- `buffer' is where the definition is put into.
+		require
+			valid_class: attached class_type
+			valid_buffer: buffer /= Void
+			needs_generation: needs_definition_generation (class_type)
+		local
+			l_name: STRING_8
+			l_is_final: BOOLEAN
+			l_type: TYPE_A
+			l_type_index: INTEGER
+			l_class: CLASS_C
+		do
+			l_class := class_type.associated_class
+			l_is_final := byte_context.final_mode
+			l_name := Encoder.feature_name (class_type.type_id, body_index)
+			buffer.put_formatted (once "{%"$s%", ", feature_name)
+
+			-- Checking whether the feature is used			
+			if
+				used or is_attribute
+			then
+--				print ("Generating signature for {" + class_type.type.name + "}." + feature_name + "%N")
+				-- Signature
+				a_sigs.put (Current, class_type, buffer, l_is_final)
+
+				buffer.put_two_character (',', ' ')
+
+				-- Routine-ID or encoded feature name
+				if is_deferred or is_attribute then
+					buffer.put_string (once "NULL")
+				else
+					buffer.put_string (once "(EIF_PROCEDURE) &")
+					if is_constant and then not is_process_or_thread_relative_once then
+						-- The constant is generated in the visible class
+						-- TODO: generate the constant if it is visible in a subclass, and then remove this branch
+						buffer.put_string (encoded_feature_name (l_class.meta_type (class_type)))
+						Extern_declarations.add_routine_from_feature (Current, l_class.meta_type (class_type))
+					else
+						buffer.put_string (encoded_feature_name (written_class.meta_type (class_type)))
+						Extern_declarations.add_routine_from_feature (written_class.feature_of_body_index (body_index), written_class.meta_type (class_type))
+					end
+				end
+				if not l_is_final then
+				buffer.put_two_character (',', ' ')
+					buffer.put_integer (rout_id_set.first)
+				end
+
+				buffer.put_character ('}')
+			elseif l_is_final then
+				buffer.put_string (once "NULL, NULL}")
+			else
+				buffer.put_string (once "NULL, 0}")
+			end
+		end
+
 	generate (class_type: CLASS_TYPE; buffer, header_buffer: GENERATION_BUFFER)
 			-- Generate feature written in `class_type' in `buffer'.
 		require
@@ -3577,7 +3754,7 @@ invariant
 	valid_inline_agent_nr: is_inline_agent implies inline_agent_nr > 0 or is_fake_inline_agent
 
 note
-	copyright:	"Copyright (c) 1984-2015, Eiffel Software"
+	copyright:	"Copyright (c) 1984-2016, Eiffel Software"
 	license:	"GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options:	"http://www.eiffel.com/licensing"
 	copying: "[

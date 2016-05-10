@@ -194,11 +194,11 @@ d_tls='undef'
 objcflags='-ObjC'
 mtccflags="$ccflags -DEIF_THREADS -DEIF_LINUXTHREADS"
 mtcppflags="$cppflags -DEIF_THREADS -DEIF_LINUXTHREADS"
-optimize="-O3"
+optimize="-O3 -g"
 voidflags='15'
 #Check value for next 1
 warning_level='-Wall -Wextra -Wno-unused-parameter -Wno-long-long -pedantic -std=gnu99'
-wkoptimize="-O0"
+wkoptimize="-O0 -g"
 
 #Makefiles
 ar='ar'

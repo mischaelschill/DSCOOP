@@ -180,7 +180,8 @@ extern "C" {
 	RT_LNK EIF_BOOLEAN (**egc_is_equal)(EIF_REFERENCE, EIF_REFERENCE);
 	RT_LNK void (**egc_ecreate)(EIF_REFERENCE, EIF_REFERENCE);
 	RT_LNK void (**egc_exp_create)(EIF_REFERENCE);
-	RT_LNK struct ctable *egc_ce_rname;
+	RT_LNK struct ctable *egc_ce_rname; // TODO: Remove this
+	RT_LNK const struct eif_ce_info *egc_ce_routines; 
 	RT_LNK long *egc_fnbref ;
 	RT_LNK long *egc_fsize;
 	RT_LNK EIF_TYPE_INDEX **egc_routines_types;

@@ -372,6 +372,23 @@ rt_unused rt_private rt_inline void CAT2(_vector_name,_remove_last) (struct _vec
 	(self->count)--; \
 } \
 \
+\
+/* \
+doc:	<routine name="_vector_name_clear" return_type="void" export="private"> \
+doc:		<summary> Remove all elements of vector 'self', setting the count to 0. </summary> \
+doc:		<param name="self" type="struct _vector_name*"> The vector struct. Must not be NULL and must not be empty. </param> \
+doc:		<thread_safety> Not safe. </thread_safety> \
+doc:		<synchronization> None. </synchronization> \
+doc:		<fixme> If we add a resize function one day, we should ensure that elements are zero-initialized. This can be done either here or in resize. </fixme> \
+doc:	</routine> \
+*/ \
+rt_unused rt_private rt_inline void CAT2(_vector_name,_clear) (struct _vector_name* self) \
+{ \
+	REQUIRE ("not_null", self != NULL); \
+	REQUIRE ("not_empty", self->count > 0); \
+	(self->count = 0); \
+} \
+\
 
 
 /*
@@ -412,7 +429,7 @@ rt_unused rt_private rt_inline struct _struct_name* CAT2(_struct_name,_create) (
 } \
 \
 /* \
-doc:	<routine name="_struct_name_create" return_type="void" export="private"> \
+doc:	<routine name="_struct_name_destroy" return_type="void" export="private"> \
 doc:		<summary> De-initialize the heap-allocated _struct_name object (using _struct_name_deinit()) and free the associated memory. </summary> \
 doc:		<param name="self" type="struct _vector_name*"> A pointer to the _struct_name object on the heap. Can be NULL. </param> \
 doc:		<thread_safety> Not safe. </thread_safety> \

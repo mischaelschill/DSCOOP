@@ -18,20 +18,23 @@ create
 
 feature {NONE} -- Initialization
 
-	make (name_id: like feature_name_id; alias_id: like alias_name_id; convert_mark: like has_convert_mark)
+	make (name_id: like feature_name_id; alias_id: like alias_name_id; convert_mark: like has_convert_mark; old_id: like old_name_id)
 			-- Initialize `Current'.
 		require
 			valid_name_id: names_heap.valid_index (name_id)
 			valid_alias_id: alias_id /= 0 implies names_heap.valid_index (alias_id)
 			valid_convert_mark: convert_mark implies alias_id /= 0
+			valid_old_id: names_heap.valid_index (old_name_id)
 		do
 			feature_name_id := name_id
 			alias_name_id := alias_id
 			has_convert_mark := convert_mark
+			old_name_id := old_id
 		ensure
 			feature_name_id_set: feature_name_id = name_id
 			alias_name_id_set: alias_name_id = alias_id
 			has_convert_mark_set: has_convert_mark = convert_mark
+			old_name_id_set: old_name_id = old_id
 		end
 
 feature -- Access
@@ -39,8 +42,31 @@ feature -- Access
 	feature_name_id: INTEGER
 			-- ID of new feature name
 
+	feature_name: STRING_8
+			-- The new name of the feature
+		do
+			Result := names_heap.item (feature_name_id)
+		end
+
 	alias_name_id: INTEGER
 			-- ID of new alias name or 0
+
+	alias_name: STRING_8
+			-- The new alias name
+		require
+			has_alias_name: alias_name_id > 0
+		do
+			Result := names_heap.item (alias_name_id)
+		end
+
+	old_name_id: INTEGER
+			-- ID of the old name
+
+	old_name: STRING_8
+			-- The old name
+		do
+			Result := names_heap.item (old_name_id)
+		end
 
 	has_convert_mark: BOOLEAN
 			-- Does new feature have a convert mark?

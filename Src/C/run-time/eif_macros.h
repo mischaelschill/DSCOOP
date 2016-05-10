@@ -57,6 +57,7 @@
 #include "eif_rout_obj.h"
 #include "eif_option.h"
 #include "eif_scoop.h"
+#include "eif_sei.h"
 
 #ifdef WORKBENCH
 #include "eif_wbench.h"
@@ -1370,6 +1371,20 @@ RT_LNK void eif_exit_eiffel_code(void);
 	l_scoop_result.type = rtype; \
 	l_scoop_result.it_r = 0; \
 	eif_scoop_log_call (l_scoop_processor_id, l_scoop_region_id, l_scoop_call_data)
+
+#define RTS_RCALL(rid, cname, rname, rtype) \
+	l_scoop_call_data->result = &l_scoop_result;\
+	l_scoop_result.type = rtype; \
+	l_scoop_result.it_r = 0; \
+	if (Dtype(l_scoop_call_data->target) == eif_get_eif_dscoop_proxy_dtype()) { \
+		l_scoop_call_data->class_name = cname; \
+		l_scoop_call_data->feature_name = rname; \
+		eif_dscoop_log_call (l_scoop_processor_id, l_scoop_region_id, l_scoop_call_data); \
+	} else { \
+		l_scoop_call_data->routine_id = (rid); \
+		eif_scoop_log_call (l_scoop_processor_id, l_scoop_region_id, l_scoop_call_data); \
+	}
+
 #else
 #define RTS_CALL(fptr, p, o, r) \
 	l_scoop_call_data->address = (fnptr) fptr; \
@@ -1377,6 +1392,19 @@ RT_LNK void eif_exit_eiffel_code(void);
 	l_scoop_call_data->offset = o; \
 	l_scoop_call_data->result = (r); \
 	eif_scoop_log_call (l_scoop_processor_id, l_scoop_region_id, l_scoop_call_data)
+
+#define RTS_RCALL(fptr, p, o, cname, rname, r) \
+	l_scoop_call_data->offset = o; \
+	l_scoop_call_data->result = (r); \
+	if (Dtype(l_scoop_call_data->target) == eif_get_eif_dscoop_proxy_dtype()) { \
+		l_scoop_call_data->class_name = cname; \
+		l_scoop_call_data->feature_name = rname; \
+		eif_dscoop_log_call (l_scoop_processor_id, l_scoop_region_id, l_scoop_call_data); \
+	} else { \
+		l_scoop_call_data->address = (fnptr) fptr; \
+		l_scoop_call_data->pattern = p; \
+		eif_scoop_log_call (l_scoop_processor_id, l_scoop_region_id, l_scoop_call_data); \
+	}
 #endif
 
 /*

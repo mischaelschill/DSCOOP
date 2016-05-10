@@ -73,6 +73,7 @@ extern struct rout_info egc_forg_table_init [];
 #else
 
 extern struct ctable egc_ce_rname_init[];
+extern const struct eif_ce_info egc_ce_routines_init[];
 extern long egc_fnbref_init[];
 extern long egc_fsize_init[]; 
 

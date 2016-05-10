@@ -11,6 +11,8 @@ class
 inherit
 	STRING_HANDLER
 
+	FORMAT_STRING
+
 create
 	make
 
@@ -438,6 +440,17 @@ feature -- Automatically indented output
 			l_buffer.append (s)
 		ensure
 			new_count: count = old count + s.count
+		end
+
+	put_formatted (a_format: STRING_8; a_arguments: detachable TUPLE)
+			-- Apply the arguments `a_arguments' to the format string `a_format'
+			-- (similar notation to printf using $ instead of %) and append it to the buffer
+		do
+			if attached a_arguments as args  then
+				put_string (apply_format_8 (a_format, args))
+			else
+				put_string (a_format)
+			end
 		end
 
 	put_string_array (a: ARRAY [STRING])

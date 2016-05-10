@@ -616,7 +616,7 @@ rt_private int update_entry (struct rt_type *type_entry)
 			} else {
 				l_result = T_INVALID_ANNOTATIONS;
 			}
-		} else if ((l_count >= 8) && (strncmp ("separate", l_str, 10) == 0)) {
+		} else if ((l_count >= 8) && (strncmp ("separate", l_str, 8) == 0)) {
 			if (!RT_CONF_IS_SEPARATE_FLAG(type_entry->annotations)) {
 				memset(type_entry->type_name, (int) ' ', 8);
 				eif_remove_surrounding_white_spaces (type_entry->type_name);

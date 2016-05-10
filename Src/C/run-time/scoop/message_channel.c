@@ -207,7 +207,7 @@ doc:		<thread_safety> Safe for exactly one sender thread and one receiver thread
 doc:		<synchronization> None required, but must not be called during garbage collection. </synchronization>
 doc:	</routine>
  */
-rt_private rt_inline void enqueue (struct rt_message_channel* self, enum scoop_message_type message_type, struct rt_processor* sender, struct eif_scoop_call_data* call, struct rt_private_queue* queue)
+rt_private rt_inline void enqueue (struct rt_message_channel* self, enum scoop_message_type message_type, struct rt_processor* sender, struct eif_scoop_call_data* call, struct rt_private_queue* queue, void* data)
 {
 	struct mc_node* node = NULL;
 	REQUIRE ("self_not_null", self);
@@ -221,6 +221,7 @@ rt_private rt_inline void enqueue (struct rt_message_channel* self, enum scoop_m
 	node->value.sender_processor = sender;
 	node->value.call = call;
 	node->value.queue = queue;
+	node->value.data = data;
 	node->value.message_type = message_type;
 
 		/* Enqueue the message. The store_release guarantees that the receiver
@@ -288,7 +289,7 @@ doc:		<thread_safety> Safe for exactly one sender thread and one receiver thread
 doc:		<synchronization> None required. </synchronization>
 doc:	</routine>
 */
-rt_shared void rt_message_channel_send (struct rt_message_channel* self, enum scoop_message_type message_type, struct rt_processor* sender_processor, struct eif_scoop_call_data* call, struct rt_private_queue* queue)
+rt_shared void rt_message_channel_send (struct rt_message_channel* self, enum scoop_message_type message_type, struct rt_processor* sender_processor, struct eif_scoop_call_data* call, struct rt_private_queue* queue, void* data)
 {
 	REQUIRE ("self_not_null", self);
 	REQUIRE ("valid_message", rt_message_is_valid (message_type, sender_processor, call, queue));
@@ -296,7 +297,7 @@ rt_shared void rt_message_channel_send (struct rt_message_channel* self, enum sc
 	/* TODO: Measure if there's any performance benefit at all by doing the enqueue operation outside the lock. */
 #if defined EIF_HAS_MEMORY_BARRIER
 		/* Perform the non-blocking enqueue operation. */
-	enqueue (self, message_type, sender_processor, call, queue);
+	enqueue (self, message_type, sender_processor, call, queue, data);
 
 		/* Lock the condition variable mutex. */
 	RT_TRACE (eif_pthread_mutex_lock (self->has_elements_condition_mutex));
@@ -305,7 +306,7 @@ rt_shared void rt_message_channel_send (struct rt_message_channel* self, enum sc
 	RT_TRACE (eif_pthread_mutex_lock (self->has_elements_condition_mutex));
 
 			/* Perform the enqueue operation. */
-	enqueue (self, message_type, sender_processor, call, queue);
+	enqueue (self, message_type, sender_processor, call, queue, data);
 #endif
 
 		/* Wake up the receiver. */

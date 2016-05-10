@@ -686,6 +686,212 @@ feature -- Conveniences
 
 feature -- Generation
 
+	generate_reflection_struct (buffer: GENERATION_BUFFER)
+		do
+			buffer.put_formatted (once "{$i, $i, eif_inheritance_of_$i, eif_defines_of_$i}",
+				associated_class.parents.count, reflection_definitions_count, type_id, type_id)
+		end
+
+	generate_reflection_data (buffer, header_buffer: GENERATION_BUFFER;
+			a_signatures: RUNTIME_ROUTINE_SIGNATURES;
+			a_generated_string_arrays: HASH_TABLE[INTEGER, HASHABLE_ARRAYED_LIST[STRING_8]];
+			a_generated_renaming_arrays: HASH_TABLE[INTEGER, HASHABLE_ARRAYED_LIST[TUPLE[STRING_8, STRING_8]]])
+		local
+			l_feature: FEATURE_I
+			i: INTEGER
+			l_features: ARRAYED_LIST[FEATURE_I]
+			l_features_sorter: QUICK_SORTER[FEATURE_I]
+			l_table: COMPUTED_FEATURE_TABLE
+			l_tmp_buffer: GENERATION_BUFFER
+			l_null_arg: STRING_8
+
+			l_renamings: HASHABLE_ARRAYED_LIST[TUPLE[old_name: STRING_8; new_name: STRING_8]]
+			l_renamings_sorter: QUICK_SORTER[TUPLE[STRING_8, STRING_8]]
+			l_strings: HASHABLE_ARRAYED_LIST[STRING_8]
+			l_strings_sorter: QUICK_SORTER[STRING_8]
+			l_renamings_index, l_selections_index, l_undefines_index: INTEGER
+			l_renamings_count, l_selections_count, l_undefines_count: INTEGER
+		do
+			l_null_arg := once "NULL, "
+			create l_features.make (associated_class.feature_table.count)
+			create l_features_sorter.make (create {AGENT_EQUALITY_TESTER[FEATURE_I]}.make (
+				agent (l,r: FEATURE_I): BOOLEAN do Result := l.feature_name < r.feature_name end))
+			from
+				l_table := associated_class.feature_table.features
+				l_table.start
+			until
+				l_table.after
+			loop
+				l_feature := (l_table.item_for_iteration)
+				if l_feature.needs_definition_generation (Current) then
+					l_features.extend (l_feature)
+				end
+				l_table.forth
+			end
+			l_features_sorter.sort (l_features)
+
+			a_signatures.set_buffer (buffer)
+			create l_tmp_buffer.make (l_features.count * 100)
+			-- Generating an array of definitions (mapping from name to routine information)
+			-- We put it in a temporary buffer, since the normal buffer will be populated
+			-- with routine signatures and argument lists
+			l_tmp_buffer.put_formatted (once "%Nconst struct eif_define eif_defines_of_$i[] = {%N%T", type_id)
+
+			reflection_definitions_count := 0
+			across
+				l_features as feat
+			loop
+				l_feature := feat.item
+				reflection_definitions_count := reflection_definitions_count + 1
+				l_feature.generate_cecil_definition (Current, a_signatures, l_tmp_buffer)
+				if not feat.is_last then
+					l_tmp_buffer.put_three_character (',', '%N', '%T')
+				end
+			end
+			l_tmp_buffer.put_string (once "};%N")
+
+			buffer.put_buffer (l_tmp_buffer)
+
+			-- Generate the inheritance information of a class type
+			-- The needed string arrays are generated into the regular buffer,
+			-- whereas the inheritance struct array is generated into a temporary
+			-- buffer and appended
+			create l_tmp_buffer.make (associated_class.computed_parents.count * 100)
+			l_tmp_buffer.put_formatted (once "%Nconst struct eif_inherit eif_inheritance_of_$i[] = {", type_id)
+
+			across
+				associated_class.computed_parents as parent
+			loop
+				if attached parent.item.renaming as l_renaming then
+					create l_renamings_sorter.make (create {AGENT_EQUALITY_TESTER[TUPLE[STRING_8, STRING_8]]}.make
+							(agent (l,r: TUPLE[old_name: STRING_8; new_name: STRING_8]): BOOLEAN do Result := l.old_name < r.old_name end))
+					create l_renamings.make (l_renaming.count)
+					across
+						l_renaming as renaming
+					loop
+						l_renamings.extend ([renaming.item.old_name, renaming.item.feature_name])
+					end
+					l_renamings_sorter.sort (l_renamings)
+					l_renamings_count := l_renamings.count
+
+					a_generated_renaming_arrays.compare_objects
+					l_renamings.compare_objects
+					if not a_generated_renaming_arrays.has (l_renamings) then
+						l_renamings_index := a_generated_renaming_arrays.count + 1
+						a_generated_renaming_arrays[l_renamings] := l_renamings_index
+						buffer.put_formatted (once "%Nstatic const struct eif_rename eif_ce_renamings_$i[] = {%N", l_renamings_index)
+						across
+							l_renamings as renaming
+						loop
+							buffer.put_formatted (once "%T{%"$s%", %"$s%"}", renaming.item.old_name, renaming.item.new_name)
+							if not renaming.is_last then
+								buffer.put_three_character (',', ' ', '%N')
+							end
+						end
+						buffer.put_string (once "};%N");
+					else
+						l_renamings_index := a_generated_renaming_arrays[l_renamings]
+					end
+				end
+
+				-- TODO: Combine the next two blocks
+				if attached parent.item.selecting as l_search_table then
+					create l_strings_sorter.make (create {COMPARABLE_COMPARATOR[STRING_8]})
+					create l_strings.make (l_search_table.count)
+					across
+						l_search_table as iter
+					loop
+						if attached names_heap.item (iter.item) as l_fname then
+							l_strings.extend (l_fname)
+						end
+					end
+					l_strings_sorter.sort (l_strings)
+					l_selections_count := l_strings.count
+
+					if not a_generated_string_arrays.has (l_strings) then
+						l_selections_index := a_generated_string_arrays.count + 1
+						a_generated_string_arrays[l_strings] := l_selections_index
+						buffer.put_formatted (once "%Nstatic const char* eif_ce_string_array_$i[] = {%N", l_selections_index)
+						across
+							l_strings as iter
+						loop
+							buffer.put_formatted (once "%T%"$s%"", iter.item)
+							if not iter.is_last then
+								buffer.put_three_character (',', ' ', '%N')
+							end
+						end
+						buffer.put_string (once "};%N");
+					else
+						l_selections_index := a_generated_string_arrays[l_strings]
+					end
+				end
+
+				if attached parent.item.undefining as l_search_table then
+					create l_strings_sorter.make (create {COMPARABLE_COMPARATOR[STRING_8]})
+					create l_strings.make (l_search_table.count)
+					across
+						l_search_table as iter
+					loop
+						if attached names_heap.item (iter.item) as l_fname then
+							l_strings.extend (l_fname)
+						end
+					end
+					l_strings_sorter.sort (l_strings)
+					l_undefines_count := l_strings.count
+
+					if not a_generated_string_arrays.has (l_strings) then
+						l_undefines_index := a_generated_string_arrays.count + 1
+						a_generated_string_arrays[l_strings] := l_undefines_index
+						buffer.put_formatted (once "%Nstatic const char* eif_ce_string_array_$i[] = {%N", l_undefines_index)
+						across
+							l_strings as iter
+						loop
+							buffer.put_formatted (once "%T%"$s%"", iter.item)
+							if not iter.is_last then
+								buffer.put_three_character (',', ' ', '%N')
+							end
+						end
+						buffer.put_string (once "};%N");
+					else
+						l_undefines_index := a_generated_string_arrays[l_strings]
+					end
+				end
+
+				-- The struct referencing the correct string array with renaming etc.
+				l_tmp_buffer.put_character ('{')
+				if l_renamings_index > 0 then
+					l_tmp_buffer.put_formatted (once "eif_ce_renamings_$i, ", l_renamings_index)
+				else
+					l_tmp_buffer.put_string (l_null_arg)
+				end
+				if l_selections_index > 0 then
+					l_tmp_buffer.put_formatted (once "eif_ce_string_array_$i, ", l_selections_index)
+				else
+					l_tmp_buffer.put_string (l_null_arg)
+				end
+				if l_undefines_index > 0 then
+					l_tmp_buffer.put_formatted (once "eif_ce_string_array_$i, ", l_undefines_index)
+				else
+					l_tmp_buffer.put_string (l_null_arg)
+				end
+				l_tmp_buffer.put_integer (l_renamings_count)
+				l_tmp_buffer.put_two_character (',', ' ')
+				l_tmp_buffer.put_integer (l_selections_count)
+				l_tmp_buffer.put_two_character (',', ' ')
+				l_tmp_buffer.put_integer (l_undefines_count)
+				l_tmp_buffer.put_two_character (',', ' ')
+				l_tmp_buffer.put_integer (parent.item.parent_type.type_id (Current.type) - 1)
+				l_tmp_buffer.put_character ('}')
+				if not parent.is_last then
+					l_tmp_buffer.put_two_character (',', ' ')
+				end
+			end
+			l_tmp_buffer.put_string (once "};%N");
+
+			buffer.put_buffer (l_tmp_buffer)
+
+		end
+
 	pass4
 			-- Generation of the C file
 		local
@@ -1560,7 +1766,7 @@ feature -- Skeleton generation
 				buffer.put_character (',')
 				buffer.put_new_line
 					-- Generate cecil structure if any
-				generate_cecil (buffer)
+				generate_reflection_struct (buffer)
 			end
 			buffer.put_character (',')
 			buffer.put_new_line
@@ -2016,6 +2222,9 @@ feature {NONE} -- Debug output
 		end
 
 feature {NONE} -- Implementation
+
+	reflection_definitions_count: INTEGER
+			-- The number of definitions needed for reflection
 
 	EIF_REFERENCE_str: STRING = "EIF_REFERENCE"
 

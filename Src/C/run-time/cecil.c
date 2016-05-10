@@ -306,29 +306,195 @@ rt_public EIF_REFERENCE_FUNCTION eifref(char *routine, EIF_TYPE_ID ftype)
 	 * Return a pointer to the routine if found, or the
 	 * null pointer if the routine does not exist.
 	 */
+	
+	//TODO: We should use the available generic information!
+	
+	struct eif_define def = eif_find_feature (routine, ftype, 0);
+	if (!def.routine && !eif_visible_is_off) {
+		eraise ("Unknown routine (visible?)", EN_PROG);
+	}
+	return (EIF_REFERENCE_FUNCTION) def.routine;
+}
 
-	EIF_TYPE l_ftype;
-	const struct ctable *ptr_table;			/* H table holding function pointers */
-	EIF_REFERENCE_FUNCTION *ref;
+/**
+ * A helper function to implement eif_routine.
+ * @param routine_name the name of the routine to look for, valid in `context'
+ * @param context the context of the routine name
+ * @param current the class currently looked at
+ * @param context_is_ancestor whether `context' is an ancestor of `current'
+ * @return the routine definition with the final name
+ */
+struct eif_define eif_routine_search(const char *routine_name, EIF_TYPE_INDEX context, EIF_TYPE_INDEX current, int context_is_ancestor) {
+	struct eif_define result;
+	result.name = NULL;
+#ifdef WORKBENCH
+	result.feature_id = 0;
+#else
+	result.routine = NULL;
+#endif
+	const struct eif_define* defines = Cecil(context).defines;
 
-	l_ftype = eif_decoded_type(ftype);
-	if (l_ftype.id == INVALID_DTYPE) {
-			/* No type id */
-		return (EIF_REFERENCE_FUNCTION) 0;
-	} else {
-		ptr_table = &Cecil(To_dtype(l_ftype.id));			/* Get associated H table */
-
-		ref = (EIF_REFERENCE_FUNCTION *) ct_value(ptr_table, routine);	/* Code location */
-			/* If function is not found and visible exceptions are enabled, raise an exception. */
-		if (!ref) {
-			if (!eif_visible_is_off) {
-				eraise ("Unknown routine (visible?)", EN_PROG);
+	//The algorithm goes up and then down the hierarchy to collect the necessary
+	// data about a routine. There are basically two "modes" of searching, 
+	// depending on whether the context is an ancestor of current .
+	if (context_is_ancestor) {
+		// If the context is an ancestor, that is we didn't pass it yet, 
+		// Then we need to do a search for it, at the moment in the form of a
+		// depth-first search. 
+		// Renaming, selecting etc. is not interesting on the way up, since the 
+		// name only becomes valid if the context is current.
+		// However, on the way down we need to apply renaming, and if the search
+		// yielded multiple results, select the one that was "selected"
+		
+		for (int i = 0; i < Cecil(current).inherits_count; i++) {
+			const struct eif_inherit* inh = &Cecil(current).inherits[i];
+			// The context is an ancestor of the parent if it is not the parent.
+			struct eif_define def = eif_routine_search(routine_name, context, inh->parent, context != inh->parent);
+			// We now need to adapt to redefinitions and renaming
+			if (def.name) {
+				// Maybe the routine got renamed
+				// ToDo: Use binary search
+				for (int j = 0; j < inh->renames_count; j++) {
+					if (0 == strcmp(inh->renames[j].old_name, def.name)) {
+						// Then we need to update the name
+						def.name = inh->renames[j].new_name;
+					}
+				}
+				result = def;
+				// Maybe the routine was selected 
+				// ToDo: Use binary search
+				for (int j = 0; j < inh->selects_count; j++) {
+					if (0 == strcmp(inh->selects[j], def.name)) {
+						// Then we not need to look further
+						break;
+					}
+				}
 			}
-			return NULL;
-		} else {
-			return *ref;	/* Return address of function. */
+		}
+		if (result.name) {
+			// Maybe there was a simple redefinition
+			for (int j = 0; j < Cecil(current).defines_count; j++) {
+				if (0 == strcmp(Cecil(current).defines[j].name, result.name)) {
+					// Then we replace the definition
+					result = Cecil(current).defines[j];
+				}
+			}
+		}
+	} else {
+		// We are at or past the context in the hierarchy and just need to find the 
+		// right definition. For this, we apply renaming in reverse on the way up.
+		// Looking for the definition in the current class
+		for (int j = 0; j < Cecil(current).defines_count; j++) {
+			if (0 == strcmp(defines[j].name, routine_name)) {
+				// Lucky! We have a definition here, so we do not need to look 
+				// further! The definition has already the correct name, so we
+				// can simply return it.
+				result = defines[j];
+				goto end;
+			}
+		}
+		for (int i = 0; i < Cecil(current).inherits_count; i++) {
+			const struct eif_inherit* inh = &Cecil(current).inherits[i];
+			// We need to look whether the routine got renamed
+			const char* old_name = routine_name;
+			for (int j = 0; j < inh->renames_count; j++) {
+				if (0 == strcmp(inh->renames[j].new_name, routine_name)) {
+					// Then we need to update the name
+					old_name = inh->renames[j].old_name;
+				}
+			}			
+			// The further iterations are past the context too, so the context 
+			// can never be an ancestor anymore
+			result = eif_routine_search(old_name, context, inh->parent, 0);
+			
+
+			if (result.name) {
+				// Found it! We now need to adapt to renaming
+				result.name = routine_name;
+				// We do not consider the selected status, since the
+				// context class is current or a descendent
+				// By going back down the tree we apply renaming and redefinitions
+				// accordingly.
+				// We do not need to look further, one correct version is enough 
+				// since we're past the context that defines the routine.
+				// If this "path" was undefined, we wouldn't be here.
+				break;
+			}
 		}
 	}
+	end: return result;
+}
+
+rt_public const char* eif_feature_name(struct eif_define* feature_definition) {
+	return feature_definition->name;
+}
+
+rt_public EIF_TYPE_ID eif_feature_type(struct eif_define* routine_definition) {
+	const struct eif_signature* sig = routine_definition->signature;
+	if (sig) {
+		EIF_TYPE result_type = eif_decoded_type (sig->result_type);
+		return eif_encoded_type (result_type);
+	}
+	return 0;
+}
+
+rt_public int eif_feature_argument_count(struct eif_define* feature_definition) {
+	const struct eif_signature* sig = feature_definition->signature;
+	if (sig && sig->argument_types) {
+		int result;
+		for (result = 0; sig->argument_types[result] != 0xFFFF; result++);
+		return result;
+	}
+	return 0;
+}
+
+rt_public EIF_TYPE_ID eif_feature_argument_type(struct eif_define* feature_definition, int argno) {
+	const struct eif_signature* sig = feature_definition->signature;
+	if (eif_feature_argument_count(feature_definition) < argno) {
+		return 0;
+	}
+	EIF_TYPE result_type = eif_decoded_type (sig->argument_types[argno-1]);
+	return eif_encoded_type (result_type);
+}
+
+#ifdef WORKBENCH
+rt_public EIF_NATURAL_32 eif_feature_routine_id(struct eif_define* feature_definition, int argno) {
+	return feature_definition->feature_id;
+}
+#else
+rt_public EIF_PROCEDURE eif_feature_routine(struct eif_define* feature_definition, int argno) {
+	return feature_definition->routine;
+}
+
+#ifdef EIF_THREADS
+rt_public void (* eif_feature_scoop_pattern(struct eif_define* feature_definition, int argno))(struct eif_scoop_call_data*) {
+	if (feature_definition->signature) {
+		return feature_definition->signature->scoop_pattern;
+	}
+	return NULL;
+}
+#endif
+#endif
+
+/*
+ * Retrieves routine information about the routine named `routine_name' in the class denoted by `ftype'.
+ * The optional argument `context' is the class where `routine_name' points to the intended routine.
+ * The context has to be an ancestor to `ftype'.
+ * If the result has a name, it may be an attribute or not visible.
+ */
+rt_public struct eif_define eif_find_feature(const char *routine_name, EIF_TYPE_ID ftype, EIF_TYPE_ID context) {
+	ftype = eif_base_type (ftype);
+	if (!context) {
+		context = ftype;
+	} else {
+		context = eif_base_type (context);
+	}
+	
+	//We are not interested in the type annotations
+	EIF_TYPE l_ftype = eif_decoded_type(ftype);
+	EIF_TYPE l_context = eif_decoded_type(context);
+	
+	return eif_routine_search (routine_name, l_context.id, l_ftype.id, context != ftype);
 }
 
 /*

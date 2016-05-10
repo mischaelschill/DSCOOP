@@ -40,6 +40,7 @@
 
 #include "rt_message.h"
 #include "rt_message_channel.h"
+#include "rt_sei.h"
 
 struct rt_processor;
 
@@ -71,6 +72,13 @@ struct rt_private_queue {
 
 		/* Producer (or client)  part */
 	struct rt_processor *supplier;
+	
+		/* Transaction support */
+	struct eif_dscoop_compensation_list compensations;	
+	
+		/* Debugging part */
+	struct rt_processor *client;	
+
 	int lock_depth;
 	EIF_BOOLEAN synced;
 #ifdef WORKBENCH

@@ -987,8 +987,7 @@ feature -- Plug and Makefile file
 				buffer.put_string (is_equal_name)
 				buffer.put_string (";%N")
 
-
-				buffer.put_string ("%Tegc_ce_rname = egc_ce_rname_init;%N")
+				buffer.put_string ("%Tegc_ce_routines = egc_ce_routines_init;%N")
 				buffer.put_string ("%Tegc_fnbref = egc_fnbref_init;%N")
 				buffer.put_string ("%Tegc_fsize = egc_fsize_init;%N")
 			end

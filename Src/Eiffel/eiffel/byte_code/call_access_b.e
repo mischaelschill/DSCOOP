@@ -465,6 +465,14 @@ feature {NONE} -- Separate call
 			-- <Precursor>
 		do
 			buffer.put_integer (routine_id)
+
+				-- Generate the target type (for remote calls)
+			buffer.put_two_character (',', ' ')
+			buffer.put_string_literal (context_type.actual_type.as_marks_free.name)
+
+				-- Generate the feature name (for remote calls)
+			buffer.put_two_character (',', ' ')
+			buffer.put_string_literal (feature_name)
 		end
 
 	generate_finalized_separate_call_args (a_target: REGISTRABLE; a_has_result: BOOLEAN)
@@ -543,6 +551,14 @@ feature {NONE} -- Separate call
 
 				-- Generate the offset.
 			buf.put_three_character (',', ' ', '0')
+
+				-- Generate the target type (for remote calls)
+			buf.put_two_character (',', ' ')
+			buf.put_string_literal (target_type.actual_type.as_marks_free.name)
+
+				-- Generate the feature name (for remote calls)
+			buf.put_two_character (',', ' ')
+			buf.put_string_literal (feature_name)
 		end
 
 	generate_workbench_separate_call_get_result (a_result: REGISTRABLE)
