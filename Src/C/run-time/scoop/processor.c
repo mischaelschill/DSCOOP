@@ -42,7 +42,7 @@ doc:<file name="processor.c" header="rt_processor.h" version="$Id$" summary="Rep
 #include "rt_processor.h"
 #include "eif_scoop.h"
 #include "rt_scoop_helpers.h"
-#include "rt_sei.h"
+#include "rt_dscoop.h"
 
 #include "eif_atomops.h"
 #include "eif_posix_threads.h"

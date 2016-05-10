@@ -43,7 +43,7 @@
 #include "rt_queue_cache.h"
 
 #include "rt_vector.h"
-#include "rt_sei.h"
+#include "rt_dscoop.h"
 
 /* Define the struct to be used for the group stack. */
 RT_DECLARE_VECTOR_BASE (request_group_stack_t, struct rt_request_group)

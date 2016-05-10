@@ -43,7 +43,7 @@ doc:<file name="request_group.c" header="rt_request_group.h" version="$Id$" summ
 #include "rt_processor.h"
 
 #include "rt_vector.h"
-#include "rt_sei.h"
+#include "rt_dscoop.h"
 #include "rt_bc_reader.h"
 
 /* We can reuse some of the functions in rt_vector.h */

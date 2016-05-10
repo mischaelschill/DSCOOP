@@ -1,6 +1,6 @@
 #include "eif_cecil.h"
 #include "rt_cecil.h"
-#include "rt_sei.h"
+#include "rt_dscoop.h"
 #include "rt_vector.h"
 #include "eif_internal.h"
 #include "rt_request_group.h"

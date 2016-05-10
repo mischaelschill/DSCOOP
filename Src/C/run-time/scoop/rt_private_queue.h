@@ -40,7 +40,7 @@
 
 #include "rt_message.h"
 #include "rt_message_channel.h"
-#include "rt_sei.h"
+#include "rt_dscoop.h"
 
 struct rt_processor;
 
