@@ -1,5 +1,5 @@
 note
-	description: "{SEI_CONNECTION} is the Eiffel representation of a SEI connection. It is backed by a native C struct used by the runtime."
+	description: "{DSCOOP_CONNECTION} is the Eiffel representation of a SEI connection. It is backed by a native C struct used by the runtime."
 	author: "Mischael Schill"
 	date: "$Date$"
 	revision: "$Revision$"
@@ -20,10 +20,10 @@ feature {NONE}
 	make
 			-- Initializes SEI and creates an empty socket
 		local
-			sei: DSCOOP
+			dscoop: DSCOOP
 		do
-			create sei
-			sei.init_sei
+			create dscoop
+			dscoop.init_dscoop
 			create socket.make_empty
 		end
 
@@ -47,7 +47,7 @@ feature
 			not is_initialized
 		local
 			l_factory: INET_ADDRESS_FACTORY
-			sei: DSCOOP
+			dscoop: DSCOOP
 		do
 			create l_factory
 			if attached l_factory.create_from_name (a_remote_address.out) as address then
@@ -70,23 +70,23 @@ feature
 			socket.is_open_read
 			socket.is_open_write
 		local
-			sei: DSCOOP
+			dscoop: DSCOOP
 			formatter: FORMAT_STRING
 			l_args: LIST[STRING_8]
 			l_address: C_STRING
 			l_port: NATURAL_16
 		do
-			create sei
+			create dscoop
 			create formatter
 			-- The initialization protocol is symmetrical: both say hello and give their node id
-			-- Unlike the rest of the protocol, this is textual.
-			if sei.node_port > 0 then
+			-- Unlike the rest of the protocol, this is textual. This makes it simpler to change to a different protocol in the future, if necessary.
+			if dscoop.node_port > 0 then
 				socket.put_string (
-					formatter.apply_format_8 ("HELLO $u $s $u%N", sei.node_id, sei.node_address, sei.node_port)
+					formatter.apply_format_8 ("HELLO $u $s $u%N", dscoop.node_id, dscoop.node_address, dscoop.node_port)
 					)
 			else
 				socket.put_string (
-					formatter.apply_format_8 ("HELLO $u%N", sei.node_id)
+					formatter.apply_format_8 ("HELLO $u%N", dscoop.node_id)
 					)
 			end
 			socket.read_line_until (1024);
@@ -102,7 +102,7 @@ feature
 						connection := register_connection_c (socket.descriptor, remote_id, create {POINTER}, 0)
 					end
 					is_initialized := True
-					separate sei.server as c_server do
+					separate dscoop.server as c_server do
 						c_server.register_connection (Current)
 						index := c_server.index_object
 					end
@@ -147,10 +147,10 @@ feature
 	close
 			-- Closes the connection. Will cause exceptions of there are still remote objects in use!
 		local
-			sei: DSCOOP
+			dscoop: DSCOOP
 		do
-			create sei
-			separate sei.server as c_server do
+			create dscoop
+			separate dscoop.server as c_server do
 				c_server.remove_connection (Current)
 			end
 			if socket.is_connected then
@@ -171,30 +171,30 @@ feature {NONE}
 
 	set_index_c (a_connection: POINTER; a_object: separate ANY)
 		external
-			"C inline use eif_sei.h"
+			"C inline use eif_dscoop.h"
 		alias
-			"sei_connection_set_index_object ($a_connection, eif_access($a_object))"
+			"eif_dscoop_connection_set_index_object ($a_connection, eif_access($a_object))"
 		end
 
 	get_remote_index_c (a_remote_nid: NATURAL_64): detachable separate ANY
 		external
-			"C use eif_sei.h"
+			"C use eif_dscoop.h"
 		alias
-			"sei_get_remote_index"
+			"eif_dscoop_get_remote_index"
 		end
 
 	deregister_connection_c (a_remote_nid: NATURAL_64)
 		external
-			"C use eif_sei.h"
+			"C use eif_dscoop.h"
 		alias
-			"sei_deregister_connection"
+			"eif_dscoop_deregister_connection"
 		end
 
 	register_connection_c (a_socket: INTEGER; a_remote_nid: NATURAL_64; a_address: POINTER; a_port: NATURAL_16): POINTER
 		external
-			"C use eif_sei.h"
+			"C use eif_dscoop.h"
 		alias
-			"sei_register_connection"
+			"eif_dscoop_register_connection"
 		end
 end
 

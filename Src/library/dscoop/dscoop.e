@@ -8,7 +8,7 @@ frozen class
 	DSCOOP
 
 feature
-	init_sei
+	init_dscoop
 			-- Initializes the SEI subsystem
 		once ("PROCESS")
 			node_id.do_nothing
@@ -18,7 +18,7 @@ feature
 	server: separate DSCOOP_SERVER
 			-- The server handles incoming connections as well as the registration of all connections
 		once ("PROCESS")
-			init_sei
+			init_dscoop
 			create Result.make
 		end
 
@@ -26,9 +26,9 @@ feature -- Access
 	node_id: NATURAL_64
 			-- The id of the current node
 		external
-			"C use eif_sei.h"
+			"C use eif_dscoop.h"
 		alias
-			"sei_node_id"
+			"eif_dscoop_node_id"
 		end
 
 	node_address: ESTRING_8
@@ -68,9 +68,9 @@ feature {NONE} -- Internals
 
 	init_structures
 		external
-			"C use eif_sei.h"
+			"C use eif_dscoop.h"
 		alias
-			"sei_init"
+			"eif_dscoop_init"
 		end
 
 end

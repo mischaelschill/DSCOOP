@@ -1,5 +1,5 @@
-: Makefile.SH generated from Jmake.tmpl and Jmakefile [jmake 3.5-206]
-: $X-Id$
+: Makefile.SH generated from Jmake.tmpl and Jmakefile [jmake 3.5 PL0]
+: $X-Id: Jmake.tmpl 91075 2005-12-28 23:58:23Z manus $
 
 case $CONFIG in
 '')
@@ -43,16 +43,21 @@ INSTALLDIR = $INSTALLDIR
 AR = ar rc
 CC = $cc
 CTAGS = ctags
-_EXE = $_exe
-JCFLAGS = \$(CFLAGS) $optimize $pthread $ccflags $large
-JCPPFLAGS = $cppflags
-JLDFLAGS = \$(LDFLAGS) $optimize $pthread $ldflags
+JCFLAGS = \$(CFLAGS) $optimize $warning_level $ccflags $large
+JMTCFLAGS = \$(CFLAGS) $optimize $warning_level $mtccflags $large
+JLKFLAGS = \$(LDFLAGS) $ccldflags
+LDSHAREDFLAGS = $ldsharedflags
+SHAREDLINK= $sharedlink
+SHAREDLIBS= $sharedlibs
+MTSHAREDLIBS= $mtsharedlibs
 L = $manext
 LIBS = $libs
 LINT = lint
+LINTFLAGS = $lintflags \$(CFLAGS)
 LN = $ln
 MANSRC = $installmansrc
-MKDEP = $mkdep \$(DPFLAGS) \$(JCPPFLAGS) --
+MAKE = make
+MKDEP = $mkdep \$(DPFLAGS) --
 MV = $mv
 RANLIB = $ranlib
 RM = $rm -f
@@ -63,9 +68,9 @@ SED = $sed
 # Automatically generated parameters -- do not edit
 
 USRINC = $usrinc
-OBJECTS =  \$(MT_LOBJ) \$(MT_WOBJ) \$(LOBJ) \$(WOBJ) x2c.o offset.o runtime_validation.o offset.o
 LSCRIPTS =  eif_size.h
 SOURCES =  \$(LSRC) \$(WADD) \$(MTADD) x2c.c runtime_validation.c
+OBJECTS =  \$(MT_LOBJ) \$(MT_WOBJ) \$(LOBJ) \$(WOBJ) x2c.o offset.o runtime_validation.o offset.o
 
 ########################################################################
 # New suffixes and associated building rules -- edit with care
@@ -77,18 +82,16 @@ SOURCES =  \$(LSRC) \$(WADD) \$(MTADD) x2c.c runtime_validation.c
 $spitshell >>Makefile <<'!NO!SUBS!'
 ########################################################################
 # Jmake rules for building libraries, programs, scripts, and data files
-# $X-Id$
-
+# $X-Id: Jmake.rules 18 2006-12-27 10:35:09Z rmanfredi $
 ########################################################################
 # Force 'make depend' to be performed first -- do not edit
 
-all:: .FORCE_DEPEND
-
 .FORCE_DEPEND::
+
+all:: .FORCE_DEPEND
 
 ########################################################################
 # Start of Jmakefile
-
 CFLAGS = -I$(TOP) -I. -I$(TOP)/ipc/app -I./include -I$(TOP)/idrs
 DPFLAGS = -I$(TOP) -I. -I$(TOP)/ipc/app
 
@@ -888,8 +891,8 @@ local_realclean::
 eif_size.h: eif_size_h.SH
 	/bin/sh eif_size_h.SH
 
-local_install local_install-strip:: $(SCRIPTS) $(LSCRIPTS)
-	@case '${MFLAGS}' in *[i]*) set +e;; esac;		\
+local_install:: $(SCRIPTS) $(LSCRIPTS)
+	@case '${MFLAGS}' in *[i]*) set +e;; esac; \
 	(set -x; test -d $(INSTALL_PREFIX)$(SCRIPTDIR) || \
 		$(INSTALLDIR) $(INSTALL_PREFIX)$(SCRIPTDIR)); \
 	for file in $(SCRIPTS) $(LSCRIPTS); do \
@@ -905,7 +908,7 @@ local_deinstall::
 	done
 
 local_install.man:: eif_size_h.man
-	@case '${MFLAGS}' in *[i]*) set +e;; esac;		\
+	@case '${MFLAGS}' in *[i]*) set +e;; esac; \
 	(set -x; test -d $(INSTALL_PREFIX)$(MANSRC) || \
 		$(INSTALLDIR) $(INSTALL_PREFIX)$(MANSRC)); \
 	$(INSTALL) -c -m 444 eif_size_h.man $(INSTALL_PREFIX)$(MANSRC)/eif_size.h.$(L)
@@ -958,7 +961,7 @@ all:: libmtfinalized.so
 local_realclean::
 	$(RM) libmtfinalized.so
 
-libmtfinalized.so:  $(MT_LOBJ)
+libmtfinalized.so: $(MT_LOBJ)
 	       $(RM) $@
 	       $(SHAREDLINK) $(LDSHAREDFLAGS) $@ $(MT_LOBJ) $(MTSHAREDLIBS)
 
@@ -967,7 +970,7 @@ all:: libmtwkbench.so
 local_realclean::
 	$(RM) libmtwkbench.so
 
-libmtwkbench.so:  $(MT_WOBJ)
+libmtwkbench.so: $(MT_WOBJ)
 	       $(RM) $@
 	       $(SHAREDLINK) $(LDSHAREDFLAGS) $@ $(MT_WOBJ) $(MTSHAREDLIBS)
 
@@ -976,7 +979,7 @@ all:: libfinalized.so
 local_realclean::
 	$(RM) libfinalized.so
 
-libfinalized.so:  $(LOBJ)
+libfinalized.so: $(LOBJ)
 	       $(RM) $@
 	       $(SHAREDLINK) $(LDSHAREDFLAGS) $@ $(LOBJ) $(SHAREDLIBS)
 
@@ -985,31 +988,31 @@ all:: libwkbench.so
 local_realclean::
 	$(RM) libwkbench.so
 
-libwkbench.so:  $(WOBJ)
+libwkbench.so: $(WOBJ)
 	       $(RM) $@
 	       $(SHAREDLINK) $(LDSHAREDFLAGS) $@ $(WOBJ) $(SHAREDLIBS)
 
 all:: x2c
 
 local_realclean::
-	$(RM) x2c$(_EXE)
+	$(RM) x2c
 
 x2c: x2c.o offset.o
-	-$(RM) $@$(_EXE)
+	$(RM) $@
 	if test -f $@$(_EXE); then \
 		$(MV) $@$(_EXE) $@~$(_EXE); fi
-	$(CC) -o $@$(_EXE) x2c.o offset.o $(JLDFLAGS) $(LIBS)
+	$(CC) -o $@ x2c.o offset.o $(JLKFLAGS) $(LIBS)
 
 all:: runtime_validation
 
 local_realclean::
-	$(RM) runtime_validation$(_EXE)
+	$(RM) runtime_validation
 
 runtime_validation: runtime_validation.o offset.o
-	-$(RM) $@$(_EXE)
+	$(RM) $@
 	if test -f $@$(_EXE); then \
 		$(MV) $@$(_EXE) $@~$(_EXE); fi
-	$(CC) -o $@$(_EXE) runtime_validation.o offset.o $(JLDFLAGS) $(LIBS)
+	$(CC) -o $@ runtime_validation.o offset.o $(JLKFLAGS) $(LIBS)
 
 all:: eif_config.h eif_portable.h eif_confmagic.h
 
@@ -1028,13 +1031,12 @@ eif_portable.h: $(TOP)/eif_portable.h
 	$(RM) $@
 	$(LN) $(TOP)/eif_portable.h .
 
-local_depend:: ../mkdep
+depend:: ../mkdep
 
 ../mkdep:
 	@echo "You have to run Configure in $(TOP) first."; exit 1
 
-depend:: local_depend
-local_depend::
+depend::
 	($(SED) '/^# DO NOT DELETE/q' Makefile && \
 	$(MKDEP) $(SOURCES) | \
 	$(SED) -e 's:/usr/lib[^ ]*::g; s:$(USRINC)[^ ]*::g; ' \
@@ -1066,12 +1068,12 @@ mt: mtwork mtfinal mtebench
 .FORCE:
 
 $(TOP)/ipc/app/network.o: .FORCE
-	@echo "Checking "network.o" in "$(TOP)/ipc/app"..."
+	@echo "Checking "network.o " in "$(TOP)/ipc/app "..."
 	cd $(TOP)/ipc/app; $(MAKE) network.o
 	@echo "Continuing in $(CURRENT)..."
 
 $(TOP)/idrs/idrs.o: .FORCE
-	@echo "Checking "idrs.o" in "$(TOP)/idrs"..."
+	@echo "Checking "idrs.o " in "$(TOP)/idrs "..."
 	cd $(TOP)/idrs; $(MAKE) idrs.o
 	@echo "Continuing in $(CURRENT)..."
 
@@ -1086,12 +1088,12 @@ $(LIB_SHARED)/$(LIB_MTIPCNAME): .FORCE
 	@echo "Continuing in $(CURRENT)..."
 
 $(TOP)/ipc/ewb/wewb_proto.o: .FORCE
-	@echo "Checking "wewb_proto.o" in "$(TOP)/ipc/ewb"..."
+	@echo "Checking "wewb_proto.o " in "$(TOP)/ipc/ewb "..."
 	cd $(TOP)/ipc/ewb; $(MAKE) wewb_proto.o
 	@echo "Continuing in $(CURRENT)..."
 
 $(TOP)/ipc/ewb/MTwewb_proto.o: .FORCE
-	@echo "Checking "MTwewb_proto.o" in "$(TOP)/ipc/ewb"..."
+	@echo "Checking "MTwewb_proto.o " in "$(TOP)/ipc/ewb "..."
 	cd $(TOP)/ipc/ewb; $(MAKE) MTwewb_proto.o
 	@echo "Continuing in $(CURRENT)..."
 
@@ -1105,19 +1107,19 @@ test: $(TESTS)
 	sram >>test 2>&1
 
 mram: malloc.c
-	$(CC) $(JCFLAGS) -DTEST  -o $@ malloc.c
+	$(CC) $(JCFLAGS) -DTEST -o $@ malloc.c
 
 gram: garcol.c
-	$(CC) $(JCFLAGS) -DTEST  -o $@ garcol.c
+	$(CC) $(JCFLAGS) -DTEST -o $@ garcol.c
 
 lram: local.c
-	$(CC) $(JCFLAGS) -DTEST  -o $@ local.c
+	$(CC) $(JCFLAGS) -DTEST -o $@ local.c
 
 eram: except.c
-	$(CC) $(JCFLAGS) -DTEST  -o $@ except.c
+	$(CC) $(JCFLAGS) -DTEST -o $@ except.c
 
 sram: sig.c
-	$(CC) $(JCFLAGS) -DTEST  -o $@ sig.c
+	$(CC) $(JCFLAGS) -DTEST -o $@ sig.c
 
 local_realclean::
 	$(RM) $(TESTS)
@@ -1128,7 +1130,7 @@ local_clobber::
 ########################################################################
 # Common rules for all Makefiles -- do not edit
 
-all::
+emptyrule::
 
 clean: local_clean
 realclean: local_realclean
@@ -1142,32 +1144,6 @@ local_realclean:: local_clean
 
 local_clobber:: local_realclean
 	$(RM) Makefile config.sh
-
-install:: local_install
-	@exit 0
-
-install-strip:: local_install-strip
-	@exit 0
-
-install.man:: maybe_install.man
-deinstall:: local_deinstall
-deinstall.man:: maybe_deinstall.man
-
-install.man-yes: local_install.man
-install.man-no:
-deinstall.man-yes: local_deinstall.man
-deinstall.man-no:
-
-!NO!SUBS!
-case "$installmansrc" in
-'') man=no;;
-*) man=yes;;
-esac
-$spitshell >>Makefile <<!GROK!THIS!
-maybe_install.man: install.man-$man
-maybe_deinstall.man: deinstall.man-$man
-!GROK!THIS!
-$spitshell >>Makefile <<'!NO!SUBS!'
 
 Makefile.SH: Jmakefile
 	-@if test -f $(TOP)/.package; then \
@@ -1189,24 +1165,19 @@ tags::
 local_clobber::
 	$(RM) tags
 
-depend::
-
 ########################################################################
 # Empty rules for directories with no sub-directories -- do not edit
 
-local_install::
+install::
 	@echo "install in $(CURRENT) done."
 
-local_install-strip::
-	@echo "install (strip) in $(CURRENT) done."
-
-local_deinstall::
+deinstall::
 	@echo "deinstall in $(CURRENT) done."
 
-local_install.man::
+install.man::
 	@echo "install.man in $(CURRENT) done."
 
-local_deinstall.man::
+deinstall.man::
 	@echo "deinstall.man in $(CURRENT) done."
 
 Makefiles::
@@ -1223,4 +1194,3 @@ Makefiles.SH::
 !NO!SUBS!
 chmod 644 Makefile
 $eunicefix Makefile
-

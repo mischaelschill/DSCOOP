@@ -1,5 +1,5 @@
 /* 
- * File:   eif_sei.h
+ * File:   eif_dscoop.h
  * Author: Mischael Schill <mischael.schill@inf.ethz.ch>
  *
  * Created on July 22, 2015, 3:14 PM
