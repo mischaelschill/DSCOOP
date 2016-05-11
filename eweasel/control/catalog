@@ -1342,6 +1342,7 @@ test	comparison-involving-allocation	final120 tcf fail finalizing
 test	bracket-wrong-dispatch			final121 tcf pass finalizing bracket_expression assigner
 test	wrong-boolean-branch-optimization	final122 tcf pass finalizing
 test	inline-internal-locals			final123 tcf pass finalizing inlining loop iteration object_test scoop
+test	inline-attribute-with-body		final124 tcf fail finalizing inlining attribute
 
 -- Runtime
 test	gc-tracking-001					runtime001	tcf pass runtime
@@ -2824,6 +2825,8 @@ test	targeted-across-iteration-loop		attach115 tcf pass void_safe targeted acros
 test	attached-locals-as-detachable		attach116 tcf pass attached_types void_safe scope local
 test	attached-result-validity		attach117 tcf pass attached_types void_safe scope local validity
 test	attachment-of-conversion		attach118 tcf pass void_safe attached_types conversion validity
+test	attachment-of-expanded-conversion	attach119 tcf pass void_safe attached_types expanded conversion
+test	unsafe-attached-locals-as-detachable	attach120 tcf pass attached_types void_safe scope local validity
 
 -- Tests for conformance in general
 test	basic-conformance		conform001 tcf pass conformance

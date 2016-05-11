@@ -1,8 +1,7 @@
 note
-	description: "Specialize configuration for VS 2010 and beyond"
-	author: ""
+	description: "Specialize configuration for VS 2010, 2012 and 2013"
 	date: "$Date$"
-	revision: "$Revision$"
+	revision: "$Revision: $"
 
 class
 	VS_NEW_CONFIG
@@ -18,13 +17,13 @@ create
 
 feature {NONE} -- Access
 
-	batch_file_name: STRING_32
+	batch_file_name: PATH
 			-- <Precursor>
 		do
-			Result := install_path + {STRING_32} "vcvarsall.bat"
+			Result := install_path.extended ("vcvarsall.bat")
 		end
 
-	batch_file_arguments: detachable STRING_32
+	batch_file_arguments: STRING_32
 			-- <Precursor>
 		do
 			if use_32bit then
@@ -35,7 +34,7 @@ feature {NONE} -- Access
 		end
 
 note
-	copyright: "Copyright (c) 1984-2012, Eiffel Software"
+	copyright: "Copyright (c) 1984-2016, Eiffel Software"
 	license: "GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options: "http://www.eiffel.com/licensing"
 	copying: "[
