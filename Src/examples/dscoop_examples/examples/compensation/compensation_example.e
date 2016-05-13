@@ -58,7 +58,6 @@ feature
 		local
 			dscoop: DSCOOP
 		do
-			enable_debug
 			-- Create a DSCOOP server
 			create dscoop
 			separate dscoop.server as c_server do
@@ -73,7 +72,6 @@ feature
 		local
 			retried: BOOLEAN
 		do
-			enable_debug
 			if not retried then
 				if attached get_supplier_object (a_supplier_address, a_supplier_port) as supplier then
 					separate supplier as s do
@@ -109,12 +107,5 @@ feature {NONE}
 				Result := supplier
 				connection := l_connection
 			end
-		end
-
-	enable_debug
-		external
-			"C inline use eif_dscoop.h"
-		alias
-			"dscoop_set_print_debug_messages (EIF_TRUE)"
 		end
 end

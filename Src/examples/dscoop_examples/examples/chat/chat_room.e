@@ -14,10 +14,7 @@ feature
 	persona: detachable separate PERSONA
 
 	log_in (a_name: ESTRING_8)
-		local
-			test: REAL_32
 		do
-			test := test.standard_twin
 			if not personas.has (a_name) then
 				personas[a_name] := create {separate PERSONA}.make (a_name, Current)
 				persona := personas[a_name]

@@ -85,6 +85,6 @@ feature {NONE} -- Initialization
 		external
 			"C inline use eif_dscoop.h"
 		alias
-			"dscoop_set_print_debug_messages (EIF_TRUE)"
+			"eif_dscoop_set_print_debug_messages (EIF_TRUE)"
 		end
 end
