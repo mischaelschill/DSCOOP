@@ -3350,9 +3350,6 @@ feature -- C code generation
 			-- The precursor was used, and the current feature has changes. Therefore we need to generate (at least) a stub
 			Result := l_was_used and then written_class = l_class
 
-			if feature_name ~ "has_new_data" then print ("class_type: " + class_type.type.name + "%N") end
-			if feature_name ~ "has_new_data" then print ("l_was_used: " + l_was_used.out + "%N") end
-			if feature_name ~ "has_new_data" then print ("used: " + used.out + "%N") end
 			if not Result and (used or is_attribute) then
 				Result := written_class = l_class
 				if feature_name ~ "has_new_data" then print ("l_class: " + l_class.name + "%N") end
