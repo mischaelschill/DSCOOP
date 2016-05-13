@@ -22,6 +22,30 @@ feature
 			create Result.make
 		end
 
+	start_server (a_index_object: detachable separate ANY; a_port: NATURAL_16)
+		do
+			separate server as c_server do
+				c_server.set_index_object (a_index_object)
+				c_server.start_incoming (a_port)
+			end
+		end
+
+	connect (a_address: ESTRING_8; a_port: NATURAL_16)
+			-- Connect to `a_address' on port `a_port' and store it's index object in `last_index_object'
+		local
+			l_connection: separate DSCOOP_CONNECTION
+		do
+			create <NONE> l_connection.make
+			separate l_connection as c_connection do
+				c_connection.connect (a_address, a_port)
+				if c_connection.is_initialized then
+					last_index_object := c_connection.get_remote_index
+				else
+					last_index_object := Void
+				end
+			end
+		end
+
 feature -- Access
 	node_id: NATURAL_64
 			-- The id of the current node
@@ -32,6 +56,7 @@ feature -- Access
 		end
 
 	node_address: ESTRING_8
+			-- The address of the current node
 		do
 			separate server as c_server do
 				Result := c_server.address
@@ -39,11 +64,15 @@ feature -- Access
 		end
 
 	node_port: NATURAL_16
+			-- The port of the current node
 		do
 			separate server as c_server do
 				Result := c_server.port
 			end
 		end
+
+	last_index_object: detachable separate ANY
+			-- The index object of the connection established with a previous call to `connect'
 
 feature {NONE} -- Internals
 	establish_connection (a_address: POINTER; a_port: NATURAL_16)
