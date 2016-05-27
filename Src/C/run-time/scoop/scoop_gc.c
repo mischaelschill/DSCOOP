@@ -436,6 +436,8 @@ rt_shared void rt_mark_all_processors (MARKER marking)
 			rt_processor_mark (proc, marking);
 		}
 	}
+	
+	rt_dscoop_mark_exported (marking);
 }
 /*
 doc:</file>

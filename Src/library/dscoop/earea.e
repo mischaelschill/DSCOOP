@@ -531,7 +531,7 @@ feature -- Comparison
 			end
 		end
 
-feature {NONE}
+feature {EAREA}
 	anchor: detachable separate MANAGED_POINTER
 
 end

@@ -122,9 +122,6 @@ EIF_BOOLEAN eif_dscoop_message_ok (struct eif_dscoop_message * message);
 
 EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, struct eif_dscoop_connection *connection);
 
-//Ignore the reply with the given id. Mostly used with send_notify
-void eif_dscoop_message_ignore_reply (EIF_NATURAL_32 id, struct eif_dscoop_connection* connection);
-
 EIF_NATURAL_64 eif_dscoop_message_sender (struct eif_dscoop_message* msg);
 
 EIF_NATURAL_64 eif_dscoop_message_recipient (struct eif_dscoop_message* msg);
@@ -149,7 +146,7 @@ int eif_dscoop_message_add_node_argument (struct eif_dscoop_message *msg, EIF_NA
 
 EIF_NATURAL_32 eif_dscoop_message_is_argument_value (struct eif_dscoop_message* message, EIF_NATURAL_8 n);
 
-struct eif_dscoop_message* eif_dscoop_message_receive_request (struct eif_dscoop_connection* connection);
+EIF_BOOLEAN eif_dscoop_message_receive_request (struct eif_dscoop_connection* connection, struct eif_dscoop_message* result);
 
 #ifdef	__cplusplus
 }

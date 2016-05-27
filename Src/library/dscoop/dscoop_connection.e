@@ -146,19 +146,11 @@ feature
 
 	close
 			-- Closes the connection. Will cause exceptions of there are still remote objects in use!
-		local
-			dscoop: DSCOOP
 		do
-			create dscoop
-			separate dscoop.server as c_server do
-				c_server.remove_connection (Current)
-			end
 			if socket.is_connected then
-				if is_initialized then
-					deregister_connection_c (remote_id)
-				end
 				socket.close
 			end
+			is_initialized := False
 		end
 
 feature {DSCOOP_POSTMAN}
@@ -181,13 +173,6 @@ feature {NONE}
 			"C use eif_dscoop.h"
 		alias
 			"eif_dscoop_get_remote_index"
-		end
-
-	deregister_connection_c (a_remote_nid: NATURAL_64)
-		external
-			"C use eif_dscoop.h"
-		alias
-			"eif_dscoop_deregister_connection"
 		end
 
 	register_connection_c (a_socket: INTEGER; a_remote_nid: NATURAL_64; a_address: POINTER; a_port: NATURAL_16): POINTER

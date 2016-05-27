@@ -14,13 +14,12 @@ inherit
 			item as area_item,
 			count as area_count,
 			merge as area_merge
---		export {ESTRING_8}
---			all
 		undefine
 			out,
 			is_equal
 		redefine
-			default_create
+			default_create,
+			copy
 		end
 
 	READABLE_STRING_GENERAL
@@ -29,17 +28,18 @@ inherit
 		export {NONE}
 			make,
 			capacity,
-			new_string
+			new_string,
+			copy
 		redefine
 			valid_index,
 			starts_with,
 			is_equal,
---			split,
 			default_create,
 			is_immutable,
 			out,
 			to_string_32,
-			to_string_8
+			to_string_8,
+			copy
 		end
 
 	READABLE_INDEXABLE[CHARACTER_8]
@@ -47,8 +47,8 @@ inherit
 			is_equal
 		redefine
 			default_create,
---			is_equal,
-			out
+			out,
+			copy
 		end
 
 create
@@ -680,6 +680,14 @@ feature -- Duplication
 			-- between `start_index' and `end_index'
 		do
 			create Result.make_substring(Current, start_index.max (1), end_index.min (count))
+		end
+
+feature {NONE}
+	copy (other: like Current)
+		do
+			area_item := other.area_item
+			area_count := other.area_count
+			anchor := other.anchor
 		end
 
 feature {ESTRING_8} -- Implementation

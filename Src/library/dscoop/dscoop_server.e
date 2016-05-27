@@ -21,7 +21,7 @@ feature -- Access
 	index_object: detachable separate ANY assign set_index_object;
 			-- The object an external connection can receive by issuing a "get"
 
-	connections: ARRAYED_SET[separate DSCOOP_CONNECTION]
+	connections: HASH_TABLE[separate DSCOOP_CONNECTION, NATURAL_64]
 			-- All connections made registered with the server
 		attribute
 			create Result.make (10)
@@ -86,11 +86,13 @@ feature {DSCOOP_CONNECTION, DSCOOP_SERVER_LISTENER}
 		require
 			a_connection.is_initialized
 		do
-			if attached index_object as obj then
-				a_connection.set_index (obj)
-			end
-			if a_connection.is_initialized then
-				connections.extend (a_connection)
+			if not connections.has (a_connection.remote_id) then
+				if attached index_object as obj then
+					a_connection.set_index (obj)
+				end
+				connections[a_connection.remote_id] := a_connection
+			else
+				a_connection.close
 			end
 		end
 

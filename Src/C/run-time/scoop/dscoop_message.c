@@ -141,6 +141,7 @@ int eif_dscoop_message_accommodate (struct eif_dscoop_message *msg, EIF_NATURAL_
 		}
 		memcpy (msg->data.raw, old_data, msg->length);
 		msg->capacity *= 2;
+		free (old_data);
 	}
 	ENSURE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
 	return T_OK;
@@ -399,8 +400,7 @@ char* encode_string_8 (char * input)
 
 EIF_BOOLEAN eif_dscoop_message_invariant (struct eif_dscoop_message* message)
 {
-	return
-	message->data.header &&
+	return	message->data.header &&
 			message->length == be32toh (message->data.header->length) + sizeof (struct eif_dscoop_message_header) &&
 			message->capacity >= message->length;
 }
@@ -684,67 +684,24 @@ EIF_BOOLEAN eif_dscoop_message_initialized (struct eif_dscoop_message *message)
 	return message->data.raw != 0;
 }
 
-struct eif_dscoop_message_request *eif_dscoop_add_message_request (struct eif_dscoop_connection* connection, struct eif_dscoop_message* message)
+struct eif_dscoop_message_request* eif_dscoop_add_message_request (struct eif_dscoop_connection* connection, struct eif_dscoop_message* message)
 {
 	REQUIRE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
 	eif_pthread_mutex_lock (connection->requests_mutex);
-	connection->requests_count++;
 	struct eif_dscoop_message_request *request;
-	for (unsigned i = 0; i < eif_dscoop_message_requests_count (&connection->requests); i++) {
-		request = eif_dscoop_message_requests_item_pointer (&connection->requests, i);
-		if (!request->is_active) {
-			// Found a free slot
-			request->message = message;
-			request->is_active = EIF_TRUE;
-			request->id = eif_dscoop_message_id (message); // We keep a copy of the id for speed without race conditions
-			request->is_ready = EIF_FALSE;
-			request->is_failed = EIF_FALSE;
-			eif_pthread_mutex_unlock (connection->requests_mutex);
-			return request;
-		}
-	}
 	// We couldn't find a free request slot, so we add one
-	struct eif_dscoop_message_request newrequest;
-	newrequest.message = message;
-	newrequest.id = eif_dscoop_message_id (message);
-	newrequest.is_active = EIF_TRUE;
-	newrequest.is_ready = EIF_FALSE;
-	newrequest.is_failed = EIF_FALSE;
-	eif_pthread_mutex_create (&newrequest.request_mutex);
-	eif_pthread_cond_create (&newrequest.ready);
-	eif_dscoop_message_requests_extend (&connection->requests, newrequest);
-	request = eif_dscoop_message_requests_last_pointer (&connection->requests);
+	request = malloc (sizeof (struct eif_dscoop_message_request));
+	request->message = message;
+	EIF_NATURAL_32 id = eif_dscoop_message_id (message);
+	request->is_active = EIF_TRUE;
+	request->is_ready = EIF_FALSE;
+	request->is_failed = EIF_FALSE;
+	eif_pthread_mutex_create (&request->request_mutex);
+	eif_pthread_cond_create (&request->ready);
+	eif_dscoop_request_table_extend (&connection->requests, id, request);
 	eif_pthread_mutex_unlock (connection->requests_mutex);
 	ENSURE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
 	return request;
-}
-
-void eif_dscoop_message_ignore_reply (EIF_NATURAL_32 id, struct eif_dscoop_connection *connection)
-{
-	eif_pthread_mutex_lock (connection->requests_mutex);
-	struct eif_dscoop_message_request *request;
-	for (unsigned i = 0; i < eif_dscoop_message_requests_count (&connection->requests); i++) {
-		request = eif_dscoop_message_requests_item_pointer (&connection->requests, i);
-		if (request->is_active && request->id == id) {
-			eif_pthread_mutex_lock (request->request_mutex);
-			if (request->is_active && request->id == id) {
-				// Found the request
-				request->is_active = EIF_FALSE;
-				request->message = 0;
-				request->id = 0;
-				request->is_ready = EIF_FALSE;
-				eif_pthread_mutex_unlock (request->request_mutex);
-				break;
-			} else {
-				eif_pthread_mutex_unlock (request->request_mutex);
-			}
-		}
-	}
-	EIF_NATURAL_32 rcount = --(connection->requests_count);
-	eif_pthread_mutex_unlock (connection->requests_mutex);
-	if (rcount == 0) {
-		eif_dscoop_connection_decrement_request_count (connection);
-	}
 }
 
 // Send the given message and wait until a reply is received
@@ -777,10 +734,9 @@ rt_public EIF_INTEGER_32 eif_dscoop_message_send_receive (struct eif_dscoop_mess
 	// Resetting the request for later use
 	request->is_active = 0;
 	eif_pthread_mutex_unlock (request->request_mutex);
-
-	eif_dscoop_connection_decrement_request_count (connection);
 	
 	EIF_EXIT_C;
+	eif_dscoop_release_connection (connection);
 	ENSURE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
 	if (failed) {
 		return 1;
@@ -964,7 +920,6 @@ rt_public EIF_INTEGER_32 eif_dscoop_message_send (struct eif_dscoop_message * me
 
 	struct eif_dscoop_connection* connection = eif_dscoop_get_connection (eif_dscoop_message_recipient (message));
 	if (!connection) {
-		printf ("No connection!\n");
 		return 1;
 	}
 
@@ -982,6 +937,7 @@ rt_public EIF_INTEGER_32 eif_dscoop_message_send (struct eif_dscoop_message * me
 		return errno;
 	}
 	eif_pthread_mutex_unlock (connection->send_mutex);
+	eif_dscoop_release_connection (connection);
 	ENSURE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
 	return T_OK;
 }
@@ -1164,7 +1120,7 @@ rt_public EIF_TYPED_VALUE eif_dscoop_message_get_value_argument (struct eif_dsco
 					(struct eif_dscoop_message_str8_arg*) (message->data.raw + offset);
 			EIF_PROCEDURE p = (EIF_PROCEDURE) eifref ("make_from_c", t);
 			p (eif_access (str), arg->data);
-			result.item.r = eif_access (str);
+			result.item.r = eif_wean (str);
 			result.type = SK_REF;
 		}
 		break;
@@ -1282,7 +1238,7 @@ rt_public EIF_INTEGER_32 eif_dscoop_message_index (struct eif_dscoop_message* me
 	ENSURE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
 }
 
-rt_public struct eif_dscoop_message* eif_dscoop_message_receive_request (struct eif_dscoop_connection* connection)
+EIF_BOOLEAN eif_dscoop_message_receive_request (struct eif_dscoop_connection* connection, struct eif_dscoop_message* result)
 {
 	// This function actually does two things: If the incoming message is a
 	// response to a request, it forwards the message to the recipient. This is
@@ -1296,47 +1252,41 @@ rt_public struct eif_dscoop_message* eif_dscoop_message_receive_request (struct 
 	//If a sender waits for a response, this variable will contain the request.
 	struct eif_dscoop_message_request *request = NULL;
 	struct eif_dscoop_message* message = NULL;
-	struct eif_dscoop_message* new_message = malloc (sizeof (struct eif_dscoop_message));
-	;
-	eif_dscoop_message_allocate (new_message);
-
+	EIF_BOOLEAN is_reply = EIF_FALSE;
+	
 	do {
 		request = NULL;
 		struct eif_dscoop_message_header header;
 		if (receive_exact_amount (fd, &header, DSCOOP_MESSAGE_HEADER_SIZE) != DSCOOP_MESSAGE_HEADER_SIZE) {
 			//Connection closed
-			return NULL;
+			return EIF_FALSE;
 		}
 
 		EIF_NATURAL_32 body_length = be32toh (header.length);
 		EIF_NATURAL_64 recipient = be64toh (header.recipient);
 		enum eif_dscoop_message_subject subject = header.subject;
 		EIF_NATURAL_32 id = be32toh (header.id);
-		EIF_BOOLEAN is_relay = recipient != eif_dscoop_node_id ();
-		EIF_BOOLEAN is_reply = !is_relay &&
-				(subject == S_OK || subject == S_FAIL);
+		is_reply = subject == S_OK || subject == S_FAIL;
 
-		if (is_reply) {
+		if (recipient != eif_dscoop_node_id ()) {
+			// Relaying is not supported (yet), we ignore this message
+			char* tmp = malloc (body_length);
+			receive_exact_amount (fd, tmp, body_length);
+			free (tmp);
+			continue;
+		} else if (is_reply) {
 			// It is a reply, so we need to check for a waiting request
 			// We either get the waiting message or create a new one.
 			eif_pthread_mutex_lock (connection->requests_mutex);
-			for (unsigned i = 0; i < eif_dscoop_message_requests_count (&connection->requests) && !is_relay; i++) {
-				request = eif_dscoop_message_requests_item_pointer (&(connection->requests), i);
-				// Not locking for checking whether the request is valid.
-				if (request->is_active && request->id == id) {
-					// We need to lock if we want to access the message, since
-					// the request could turn invalid while we try to read the id
-					eif_pthread_mutex_lock (request->request_mutex);
-					// Checking whether the request is still the right one
-					if (request->is_active && request->id == id) {
-						message = request->message;
-						break;
-					}
-					eif_pthread_mutex_unlock (request->request_mutex);
-					request = NULL;
-				} else {
-					request = NULL;
-				}
+			request = eif_dscoop_request_table_item (&(connection->requests), id);
+			if (request) {
+				// We need to lock if we want to access the message, since
+				// the request could turn invalid while we try to read the id
+				eif_pthread_mutex_lock (request->request_mutex);
+				// Checking whether the request is still the right one
+				message = request->message;
+				eif_pthread_mutex_unlock (request->request_mutex);
+				eif_dscoop_request_table_remove (&(connection->requests), id, NULL);
 			}
 			eif_pthread_mutex_unlock (connection->requests_mutex);
 			if (!request) {
@@ -1347,7 +1297,7 @@ rt_public struct eif_dscoop_message* eif_dscoop_message_receive_request (struct 
 				continue;
 			}
 		} else {
-			message = new_message;
+			message = result;
 		}
 
 		eif_dscoop_message_accommodate (message, DSCOOP_MESSAGE_HEADER_SIZE + body_length);
@@ -1359,40 +1309,25 @@ rt_public struct eif_dscoop_message* eif_dscoop_message_receive_request (struct 
 
 		if (eif_dscoop_message_index (message)) {
 			// Indexing failed, so we ignore the message
-			// Maybe we should inform waiting requests?
+			// TODO: Maybe we should inform waiting requests?
 			// OTOH, waiting requests should time out anyway ...
-			message = NULL;
 			continue;
 		}
 
 		if (eif_dscoop_print_debug_messages) {
 			printf ("Received request: "); eif_dscoop_message_print (message);
 		}
-		if (is_relay) {
-			struct eif_dscoop_connection* c = eif_dscoop_get_connection (recipient);
-
-			if (!c) {
-				//We could not forward the message, so we send back a FAIL
-				eif_dscoop_message_reply (message, S_FAIL);
-				eif_dscoop_message_set_sender (message, eif_dscoop_node_id ());
-				eif_dscoop_message_add_identifier_argument (message, "no_route");
-				eif_dscoop_message_add_natural_argument (message, eif_dscoop_node_id ());
-				eif_dscoop_message_send (message);
-			}
-			eif_dscoop_message_send (message);
-			message = NULL;
-		} else if (is_reply) {
+		if (is_reply) {
 			CHECK ("request_not_null", request);
 			request->is_ready = EIF_TRUE;
 			// Release the request and signal
 			eif_pthread_cond_signal (request->ready);
 			eif_pthread_mutex_unlock (request->request_mutex);
-			message = NULL;
 		} else {
 			// We do not need to do anything here in the case of requests
 		}
-	} while (!message);
-	return message;
+	} while (is_reply);
+	return EIF_TRUE;
 }
 
 rt_public EIF_NATURAL_8 eif_dscoop_message_argument_count (struct eif_dscoop_message* msg)

@@ -35,7 +35,7 @@ feature
 				error := process_message_c (connection_c)
 			end
 			separate connection as c_connection do
-				c_connection.close
+				deregister_connection_c (c_connection.remote_id)
 			end
 		end
 
@@ -49,6 +49,13 @@ feature {NONE} -- Internals
 			-- Processes as single messae, returning 0 on success
 		external
 			"built_in"
+		end
+
+	deregister_connection_c (a_remote_nid: NATURAL_64)
+		external
+			"C use eif_dscoop.h"
+		alias
+			"eif_dscoop_deregister_connection"
 		end
 
 	exit

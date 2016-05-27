@@ -95,6 +95,13 @@ feature {NONE} -- Internals
 			end
 		end
 
+	remove_connection (a_nid: NATURAL_64)
+		do
+			separate server as c_server do
+				c_server.connections.remove (a_nid)
+			end
+		end
+
 	init_structures
 		external
 			"C use eif_dscoop.h"

@@ -459,7 +459,7 @@ rt_shared void rt_processor_application_loop (struct rt_processor* self)
 			 * the mechanism here has become obsolete and can be
 			 * removed.
 			 */
-		if (decrement_and_fetch_active_processor_count() == 0
+		if (!self->is_active && decrement_and_fetch_active_processor_count() == 0
 			&& rt_message_channel_is_empty (&self->queue_of_queues)) {
 			plsc();
 		}
@@ -490,10 +490,10 @@ rt_shared void rt_processor_application_loop (struct rt_processor* self)
 
 			eif_dscoop_process_message (self, (struct eif_dscoop_message*)next_job.data);
 
-			self->is_active = EIF_FALSE;
+			self->is_active = self->request_group_stack.count > 0;
 			self->client = EIF_NULL_PROCESSOR;
 		} else if (next_job.message_type == SCOOP_MESSAGE_REVERT) {
-			self->is_active = EIF_TRUE;
+			increment_active_processor_count();
 			self->client = next_job.sender_processor->pid;
 
 			eif_dscoop_transaction_revert (self);
@@ -503,6 +503,9 @@ rt_shared void rt_processor_application_loop (struct rt_processor* self)
 		} else {
 			CHECK ("shutdown_message", next_job.message_type == SCOOP_MESSAGE_SHUTDOWN);
 			is_stopped = EIF_TRUE;
+			if (self->connection) {
+				rt_dscoop_deregister_proxy_processor (self->connection->remote_nid, self->remote_pid);
+			}
 		}
 	}
 		/* Check disabled because queue-of-queues might contain multiple shutdown messages. */

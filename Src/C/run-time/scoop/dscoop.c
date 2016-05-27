@@ -14,16 +14,93 @@
 #include "rt_macros.h"
 #include "rt_scoop.h"
 #include "rt_dscoop_message.h"
+#include "rt_struct.h"
 
-struct eif_dscoop_connection_list_t eif_dscoop_connections;
-struct eif_dscoop_proxy_map_t eif_dscoop_proxy_map;
-struct eif_dscoop_proxy_processor_map_t eif_dscoop_proxy_processor_map;
-struct eif_dscoop_exported_objects_t eif_dscoop_exported_objects;
+RT_DECLARE_VECTOR (eif_nid_list, EIF_DSCOOP_NID)
+
+#define RT_CHT_NAMESPACE(suffix) eif_dscoop_request_table##suffix
+#define RT_CHT_KEY_TYPE EIF_NATURAL_32
+#define RT_CHT_VALUE_TYPE struct eif_dscoop_message_request*
+#include "../cuckoo_hash.c"
+#undef RT_CHT_NAMESPACE
+#undef RT_CHT_KEY_TYPE
+#undef RT_CHT_VALUE_TYPE
+
+#define RT_CHT_NAMESPACE(suffix) eif_dscoop_connection_table##suffix
+#define RT_CHT_KEY_TYPE EIF_NATURAL_64
+#define RT_CHT_VALUE_TYPE struct eif_dscoop_connection*
+#include "../cuckoo_hash.c"
+#undef RT_CHT_NAMESPACE
+#undef RT_CHT_KEY_TYPE
+#undef RT_CHT_VALUE_TYPE
+
+#define RT_CHT_NAMESPACE(suffix) eif_dscoop_oid_ref_table##suffix
+#define RT_CHT_KEY_TYPE EIF_DSCOOP_OID
+#define RT_CHT_VALUE_TYPE EIF_REFERENCE
+#include "../cuckoo_hash.c"
+#undef RT_CHT_NAMESPACE
+#undef RT_CHT_KEY_TYPE
+#undef RT_CHT_VALUE_TYPE
+
+#define RT_CHT_NAMESPACE(suffix) eif_dscoop_export_table##suffix
+#define RT_CHT_KEY_TYPE EIF_DSCOOP_NID
+#define RT_CHT_VALUE_TYPE struct eif_dscoop_oid_ref_table
+#include "../cuckoo_hash.c"
+#undef RT_CHT_NAMESPACE
+#undef RT_CHT_KEY_TYPE
+#undef RT_CHT_VALUE_TYPE
+
+#define RT_CHT_NAMESPACE(suffix) eif_dscoop_object_oid_table##suffix
+#define RT_CHT_KEY_TYPE EIF_REFERENCE
+#define RT_CHT_VALUE_TYPE EIF_DSCOOP_OID
+#include "../cuckoo_hash.c"
+#undef RT_CHT_NAMESPACE
+#undef RT_CHT_KEY_TYPE
+#undef RT_CHT_VALUE_TYPE
+
+#define RT_CHT_NAMESPACE(suffix) eif_dscoop_proxy_table##suffix
+#define RT_CHT_KEY_TYPE struct eif_dscoop_reference
+#define RT_CHT_KEY_EQUALITY(l, r) \
+		l.nid == r.nid && l.pid == r.pid && l.oid == r.oid
+#define RT_CHT_HASHCODE(ref) \
+		ref.nid + 69046 * ref.pid + 18549 * ref.oid
+#define RT_CHT_VALUE_TYPE EIF_OBJECT
+#include "../cuckoo_hash.c"
+#undef RT_CHT_HASHCODE
+#undef RT_CHT_KEY_EQUALITY
+#undef RT_CHT_NAMESPACE
+#undef RT_CHT_KEY_TYPE
+#undef RT_CHT_VALUE_TYPE
+
+#define RT_CHT_NAMESPACE(suffix) eif_dscoop_proxy_processors_table##suffix
+#define RT_CHT_KEY_TYPE struct eif_dscoop_processor_reference
+#define RT_CHT_KEY_EQUALITY(l, r) \
+		l.nid == r.nid && l.pid == r.pid
+#define RT_CHT_HASHCODE(ref) \
+		ref.nid + 69046 * ref.pid
+#define RT_CHT_VALUE_TYPE EIF_SCP_PID
+#include "../cuckoo_hash.c"
+#include "rt_atomic_int.h"
+#undef RT_CHT_HASHCODE
+#undef RT_CHT_KEY_EQUALITY
+#undef RT_CHT_NAMESPACE
+#undef RT_CHT_KEY_TYPE
+#undef RT_CHT_VALUE_TYPE
+
+EIF_BOOLEAN eif_dscoop_initialized = EIF_FALSE;
+
+struct eif_dscoop_connection_table eif_dscoop_connections = {0};
+struct eif_dscoop_proxy_table eif_dscoop_proxy_table = {0};
+struct eif_dscoop_proxy_processors_table eif_dscoop_proxy_processors_table = {0};
+struct eif_dscoop_object_oid_table eif_dscoop_object_oid_table = {0};
+struct eif_dscoop_export_table eif_dscoop_export_table = {0};
 
 EIF_MUTEX_TYPE *conn_mutex;
 EIF_MUTEX_TYPE *proxyobj_mutex;
 EIF_MUTEX_TYPE *proxyproc_mutex;
 EIF_MUTEX_TYPE *exported_mutex;
+
+EIF_BOOLEAN object_oid_table_need_rehash = EIF_FALSE;
 
 // Runtime constants
 EIF_TYPE_ID proxy_type;
@@ -33,7 +110,39 @@ EIF_TYPE_ID ESTRING_32_type;
 EIF_BOOLEAN eif_dscoop_print_debug_messages = EIF_FALSE;
 
 // Some helper functions only used here
-		
+
+union overhead* HEADERf(EIF_REFERENCE p)	{
+	return (((union overhead *) (p))-1);	/* Fetch header address */
+}
+
+EIF_REFERENCE eif_accessf (EIF_OBJECT obj) {
+	return eif_access (obj);
+}
+
+/*
+doc:	<routine name="rt_mark_ref" export="private">
+doc:		<summary>Mark and update the reference at 'ref'.</summary>
+doc:		<param name="marking" type="MARKER">The marker function. Must not be NULL.</param>
+doc:		<param name="ref" type="EIF_REFERENCE*">A pointer to the Eiffel reference. Must not be NULL.</param>
+doc:		<thread_safety>Not safe</thread_safety>
+doc:		<synchronization>Only call during GC.</synchronization>
+doc:	</routine>
+*/
+rt_private void rt_mark_ref (MARKER marking, EIF_REFERENCE *ref)
+{
+	REQUIRE("marking_not_null", marking);
+	REQUIRE("ref_not_null", ref);
+	*ref = marking (ref);
+}
+
+EIF_TYPE_INDEX Dtype_fun(EIF_REFERENCE x) {
+	return Dtype (x);
+}
+
+EIF_TYPE_INDEX Dftype_fun(EIF_REFERENCE x) {
+	return Dftype (x);
+}
+
 // DSCOOP
 rt_public EIF_NATURAL_32 eif_dscoop_oid_of_proxy (EIF_REFERENCE r)
 {
@@ -64,30 +173,12 @@ struct eif_dscoop_connection* eif_dscoop_connection_of_proxy (EIF_REFERENCE r)
 
 void eif_dscoop_connection_deinit (struct eif_dscoop_connection * connection)
 {
-	printf ("A\n");
 	free (connection->node_address);
-	printf ("B\n");
 	eif_pthread_mutex_destroy (connection->requests_mutex);
-	printf ("C\n");
 	eif_pthread_mutex_destroy (connection->send_mutex);
-	printf ("D\n");
-	eif_dscoop_message_requests_deinit (&connection->requests);
-	printf ("E\n");
+	eif_dscoop_request_table_deinit (&connection->requests);
 	//TODO: Remove the connection from the "eiffel" server.
 }
-
-void eif_dscoop_connection_decrement_request_count (struct eif_dscoop_connection * connection)
-{
-	eif_pthread_mutex_lock (connection->requests_mutex);
-	EIF_NATURAL_32 rcount = connection->requests_count--;
-	eif_pthread_mutex_unlock (connection->requests_mutex);
-	if (rcount == 0 && connection->socket == 0) {
-		//Connection inactive, deleting
-		eif_dscoop_connection_deinit (connection);
-		free (connection);
-	}
-}	
-
 
 //TODO: put this in the right rt_...h file, maybe rt_scoop_helpers?
 void eif_scoop_prepare_separate_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID client_region_id, struct eif_scoop_call_data* call);
@@ -95,7 +186,17 @@ void eif_scoop_prepare_separate_call (EIF_SCP_PID client_processor_id, EIF_SCP_P
 rt_public void eif_dscoop_log_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID client_region_id, call_data *data)
 {
 	REQUIRE("has data", data);
+	EIF_GET_CONTEXT
 
+	RT_GC_PROTECT (data->target);
+	int refargs = 1;
+	for (unsigned i = 0; i < data->count; i++) {
+		if (data->argument[i].type == SK_REF && data->argument[i].item.r) {
+			refargs++;
+			RT_GC_PROTECT (data->argument[i].item.r);
+		}
+	}	
+	
 	struct rt_processor *client = rt_get_processor (client_region_id);
 	struct rt_processor *supplier = rt_get_processor (RTS_PID(data->target));
 	struct rt_private_queue *pq = NULL;
@@ -121,6 +222,7 @@ rt_public void eif_dscoop_log_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID
 	if (error != T_OK) {
 		free (data);
 		eif_dscoop_message_dispose (&message);
+		RT_GC_WEAN_N (refargs);
 		enomem();
 	}
 
@@ -136,22 +238,30 @@ rt_public void eif_dscoop_log_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID
 	
 	struct foreign_reference* foreign_references = malloc (data->count * sizeof (struct foreign_reference));
 	unsigned foreign_references_count = 0;
-			
+	
 	for (unsigned i = 0; i < data->count; i++) {
 		eif_dscoop_message_add_value_argument (&message, &data->argument[i], supplier->remote_pid);
-		if (data->argument[i].type == SK_REF && Dtype(data->argument[i].item.r) == eif_get_eif_dscoop_proxy_dtype()) {
-			EIF_REFERENCE ref = data->argument[i].item.r;
-			EIF_NATURAL_64 nid = eif_dscoop_nid_of_proxy (ref);
+		if (data->argument[i].item.r && data->argument[i].type == SK_REF && Dtype(data->argument[i].item.r) == eif_get_eif_dscoop_proxy_dtype()) {
+			EIF_NATURAL_64 nid = eif_dscoop_nid_of_proxy (data->argument[i].item.r);
 			if (nid != eif_dscoop_node_id () && nid != supplier->connection->remote_nid) {
 				foreign_references[foreign_references_count++] = (struct foreign_reference){
-					nid, eif_dscoop_oid_of_proxy (ref)};
-				struct eif_dscoop_connection* conn = eif_dscoop_get_connection (nid);
-				if (conn && conn->node_address) {
-					eif_dscoop_message_add_node_argument (&message, nid, conn->node_address, conn->node_port);
+					nid, eif_dscoop_oid_of_proxy (data->argument[i].item.r)};
+				struct eif_dscoop_connection* connection = eif_dscoop_get_connection (nid);
+				if (connection && connection->node_address) {
+					eif_dscoop_message_add_node_argument (&message, nid, connection->node_address, connection->node_port);
 				}
+				eif_dscoop_release_connection (connection);
 			}
 		}
 	}
+	#ifdef WORKBENCH
+		EIF_TYPED_VALUE* result = data->result;
+	#else
+		void* result = data->result;
+	#endif
+	free (data);
+	RT_GC_WEAN_N (refargs);
+	refargs = 0;
 	
 	// TODO: First send all messages, then receive them
 	for (unsigned i = 0; i < foreign_references_count; i++) {
@@ -169,23 +279,15 @@ rt_public void eif_dscoop_log_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID
 	free(foreign_references);
 	
 	if (error != T_OK) {
-		free (data);
 		eif_dscoop_message_dispose (&message);
 		eraise ("Error passing remote reference", EN_PROG);
 	}
 	
 	if (eif_dscoop_message_send_receive (&message) || !eif_dscoop_message_ok (&message)) {
-		free(data);
 		eif_dscoop_message_dispose (&message);
 		eraise ("External call failed", EN_PROG);
 	}
 	
-	#ifdef WORKBENCH
-		EIF_TYPED_VALUE* result = data->result;
-	#else
-		void* result = data->result;
-	#endif
-	free(data);
 	if (expects_result) {
 		// We expect a result, so we try to get it
 		if (eif_dscoop_message_argument_count (&message) > 0 && eif_dscoop_message_is_argument_value (&message, 0)) {
@@ -195,7 +297,11 @@ rt_public void eif_dscoop_log_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID
 					EIF_NATURAL_16 port = 0;
 					EIF_NATURAL_64 nid = 
 							eif_dscoop_message_get_node_argument (&message, 1, &address, &port);
-					if (address && port && nid && !eif_dscoop_get_connection (nid)) {
+
+					eif_pthread_mutex_lock (conn_mutex);
+					EIF_BOOLEAN has_connection = eif_dscoop_connection_table_has (&eif_dscoop_connections, nid);
+					eif_pthread_mutex_unlock (conn_mutex);					
+					if (address && port && nid && !has_connection) {
 						eif_dscoop_connect (address, port);
 					}
 					free (address);
@@ -262,20 +368,20 @@ rt_public void eif_dscoop_log_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID
 }
 
 rt_public void eif_dscoop_init () {
-	static EIF_BOOLEAN eif_dscoop_initialized = EIF_FALSE;
 	if (!eif_dscoop_initialized)
 	{
 		proxy_type = eif_type_id ("DSCOOP_PROXY_OBJECT");
 		ESTRING_8_type = eif_type_id ("ESTRING_8");
 		ESTRING_32_type = eif_type_id ("ESTRING_32");
 
-		eif_dscoop_connection_list_t_init (&eif_dscoop_connections);
+		eif_dscoop_connection_table_init (&eif_dscoop_connections, 0);
 		eif_pthread_mutex_create (&conn_mutex);
-		eif_dscoop_proxy_map_t_init (&eif_dscoop_proxy_map);
+		eif_dscoop_proxy_table_init (&eif_dscoop_proxy_table, 0);
 		eif_pthread_mutex_create (&proxyobj_mutex);
-//		eif_dscoop_proxy_processor_map_t_init (&eif_dscoop_proxy_processor_map);
+		eif_dscoop_proxy_processors_table_init (&eif_dscoop_proxy_processors_table, 0);
 		eif_pthread_mutex_create (&proxyproc_mutex);
-		eif_dscoop_exported_objects_t_init (&eif_dscoop_exported_objects);
+		eif_dscoop_object_oid_table_init (&eif_dscoop_object_oid_table, 0);
+		eif_dscoop_export_table_init (&eif_dscoop_export_table, 0);
 		eif_pthread_mutex_create (&exported_mutex);
 		eif_dscoop_initialized = EIF_TRUE;
 //		signal(SIGPIPE, SIG_IGN); 
@@ -290,12 +396,12 @@ rt_public EIF_POINTER eif_dscoop_add_connection (EIF_NATURAL_64 remote_nid, int 
 	connection->remote_nid = remote_nid;
 	eif_pthread_mutex_create (&connection->send_mutex);
 	eif_pthread_mutex_create (&connection->requests_mutex);
-	eif_dscoop_message_requests_init (&connection->requests);
+	eif_dscoop_request_table_init (&connection->requests, 0);
 	
 	connection->buffer.offset = 0;
 	connection->buffer.len = 0;
-	connection->index_object = NULL;
-	//connection->relay = relay;
+	connection->index_object_ref = NULL;
+	connection->reference_count = 0;
 	if (node_address) {
 		connection->node_address = malloc (strlen (node_address) + 1);
 		strcpy(connection->node_address, node_address);
@@ -305,65 +411,81 @@ rt_public EIF_POINTER eif_dscoop_add_connection (EIF_NATURAL_64 remote_nid, int 
 	connection->node_port = node_port;
 	
 	eif_pthread_mutex_lock (conn_mutex);
-	eif_dscoop_connection_list_t_extend (&eif_dscoop_connections, connection);
+	if (eif_dscoop_connection_table_has (&eif_dscoop_connections, connection->remote_nid)) {
+		eif_dscoop_connection_deinit (connection);
+	} else {
+		eif_dscoop_connection_table_extend (&eif_dscoop_connections, connection->remote_nid, connection);
+	}
 	eif_pthread_mutex_unlock (conn_mutex);
 	return connection;
 }
 
 rt_public void eif_dscoop_remove_connection (EIF_NATURAL_64 remote_nid)
 {
-	struct eif_dscoop_connection* connection = eif_dscoop_get_connection (remote_nid);
+	eif_pthread_mutex_lock (conn_mutex);
 	
-	// Remove exported objects
-	eif_pthread_mutex_lock (exported_mutex); {
+	struct eif_dscoop_connection* connection = NULL;
+	if (eif_dscoop_connection_table_has(&eif_dscoop_connections, remote_nid)) {
+		eif_dscoop_connection_table_remove (&eif_dscoop_connections, remote_nid, &connection);
+	}
 	
-		size_t count = eif_dscoop_exported_objects_t_count (&eif_dscoop_exported_objects);
-		
-		for (size_t i = 0; i < count; i++) {
-			struct eif_dscoop_exported_object* o = eif_dscoop_exported_objects_t_item_pointer (&eif_dscoop_exported_objects, i);
-			if (o->oid) {
-				size_t c_count = eif_natural_64_list_count (&o->clients);
-				for (size_t j = 0; j < c_count; j++) {
-					EIF_NATURAL_64 client = eif_natural_64_list_item (&o->clients, j);
-					if (client == remote_nid) {
-						eif_wean (o->local_obj);
-						o->oid = 0;
-						o->local_obj = NULL;
-						eif_natural_64_list_deinit (&o->clients);
-					}
-				}
-			}
-		}
-	} eif_pthread_mutex_unlock (exported_mutex);
+	eif_pthread_mutex_unlock (conn_mutex);
 
-	// Wake up waiting clients, they will get an exception.
-	eif_pthread_mutex_lock (connection->requests_mutex);
-	size_t rcount = eif_dscoop_message_requests_count (&connection->requests);
-	for (size_t i = 0; i < rcount; i++) {
-		struct eif_dscoop_message_request* r = eif_dscoop_message_requests_item_pointer (&connection->requests, i);
-		if (r->is_active) {
+	if (connection) {
+		connection->reference_count++;
+		// Remove exported objects
+		
+		eif_pthread_mutex_lock (exported_mutex);
+		{
+			struct eif_dscoop_oid_ref_table* table = 
+					eif_dscoop_export_table_item_pointer (&eif_dscoop_export_table, connection->remote_nid);
+			if (table) {
+				eif_dscoop_oid_ref_table_deinit (table);
+				eif_dscoop_export_table_remove (&eif_dscoop_export_table, connection->remote_nid, NULL);
+			}
+		} 
+		eif_pthread_mutex_unlock (exported_mutex);
+
+		// Wake up waiting clients, they will get an exception.
+		eif_pthread_mutex_lock (connection->requests_mutex);
+		
+		struct eif_dscoop_request_table_iterator it
+				= eif_dscoop_request_table_iterator (&connection->requests);
+		while (!eif_dscoop_request_table_iterator_after (&it)) {
+			struct eif_dscoop_message_request* r = eif_dscoop_request_table_iterator_item (&it);
 			eif_pthread_mutex_lock (r->request_mutex);
 			r->is_failed = EIF_TRUE;
-			eif_pthread_cond_broadcast (r->ready);
+			eif_pthread_cond_signal (r->ready);
 			eif_pthread_mutex_unlock (r->request_mutex);
 		}
-	}	
-	eif_pthread_mutex_unlock (connection->requests_mutex);
-	if (rcount == 0) {
-		eif_dscoop_connection_deinit (connection);
-		free (connection);
-	}
-	
-	eif_pthread_mutex_lock (conn_mutex);
-	for (unsigned i = 0; i < eif_dscoop_connection_list_t_count (&eif_dscoop_connections); i++) 
-	{
-		if (eif_dscoop_connection_list_t_item (&eif_dscoop_connections, i) == connection)
-		{
-			*eif_dscoop_connection_list_t_item_pointer (&eif_dscoop_connections, i) = 0;
-			break;
+		eif_dscoop_request_table_wipe_out (&connection->requests);
+		eif_pthread_mutex_unlock (connection->requests_mutex);
+		eif_dscoop_release_connection (connection);
+
+		#ifdef WORKBENCH
+			static void (*DSCOOP_remove_connection)(EIF_REFERENCE, EIF_TYPED_VALUE) = NULL;
+		#else
+			static void (*DSCOOP_remove_connection)(EIF_REFERENCE, EIF_NATURAL_64) = NULL;
+		#endif
+		static EIF_TYPE_ID eif_dscoop_tid;
+		if (DSCOOP_remove_connection == NULL) {
+			eif_dscoop_tid = eif_type_id ("DSCOOP");
+			struct eif_define def = eif_find_feature ("remove_connection", eif_dscoop_tid, eif_dscoop_tid);	
+		#ifdef WORKBENCH
+			DSCOOP_remove_connection = (void (*)(EIF_REFERENCE, EIF_TYPED_VALUE)) def.routine;
+		#else
+			DSCOOP_remove_connection = (void (*)(EIF_REFERENCE, EIF_NATURAL_64)) def.routine;
+		#endif
 		}
+		#ifdef WORKBENCH
+			EIF_TYPED_VALUE nid_val;
+			nid_val.type = SK_UINT64;
+			nid_val.item.n8 = remote_nid;
+			DSCOOP_remove_connection(eif_wean(eif_create (eif_dscoop_tid)), nid_val);
+		#else
+			DSCOOP_remove_connection(eif_wean(eif_create (eif_dscoop_tid)), remote_nid);
+		#endif
 	}
-	eif_pthread_mutex_unlock (conn_mutex);
 }
 
 rt_public EIF_POINTER eif_dscoop_register_connection (EIF_INTEGER_32 fd, EIF_NATURAL_64 remote_nid, const char *node_address, EIF_NATURAL_16 node_port)
@@ -379,107 +501,73 @@ rt_public void eif_dscoop_deregister_connection (EIF_NATURAL_64 remote_nid)
 struct eif_dscoop_connection* eif_dscoop_get_connection (EIF_NATURAL_64 remote_nid)
 {
 	eif_pthread_mutex_lock (conn_mutex);
-	for (unsigned i = 0; i < eif_dscoop_connection_list_t_count (&eif_dscoop_connections); i++) 
-	{
-		if (eif_dscoop_connection_list_t_item(&eif_dscoop_connections, i)->remote_nid == remote_nid)
-		{
-			eif_pthread_mutex_unlock (conn_mutex);
-			return eif_dscoop_connection_list_t_item(&eif_dscoop_connections, i);
-		}
+	struct eif_dscoop_connection* result = NULL;
+	if (eif_dscoop_connection_table_has (&eif_dscoop_connections, remote_nid)) {
+		result = eif_dscoop_connection_table_item (&eif_dscoop_connections, remote_nid);
 	}
 	eif_pthread_mutex_unlock (conn_mutex);
-	return NULL;
+	return result;
+}
+
+void eif_dscoop_release_connection (struct eif_dscoop_connection* connection)
+{
+	if (connection) {
+		eif_pthread_mutex_lock (conn_mutex);
+		if (0 == --connection->reference_count && !connection->socket && connection->requests.count == 0) {
+			eif_dscoop_connection_deinit (connection);
+		}
+		eif_pthread_mutex_unlock (conn_mutex);
+	}
 }
 
 rt_public int eif_dscoop_get_proxy_processor (EIF_REFERENCE* result, struct eif_dscoop_connection* connection, EIF_NATURAL_32 remote_pid) 
 {
 	EIF_SCP_PID proxy_pid = EIF_NULL_PROCESSOR;
-	EIF_BOOLEAN found = EIF_FALSE;
 	EIF_ENTER_C; // This lock may be held while waiting for GC, so we need to yield to the GC
 	eif_pthread_mutex_lock (proxyproc_mutex);
 	EIF_EXIT_C;
-	for (unsigned i = 0; i < eif_dscoop_proxy_processor_map_t_count (&eif_dscoop_proxy_processor_map); i++) {
-		struct eif_dscoop_proxy_processor_mapping procmap = eif_dscoop_proxy_processor_map_t_item(&eif_dscoop_proxy_processor_map, i);
-		if (procmap.remote_pid == remote_pid &&	procmap.remote_nid == connection->remote_nid) {
-			proxy_pid = procmap.proxy_pid;
-			break;
-		}
-	}
-
-	if (proxy_pid != EIF_NULL_PROCESSOR) {
-		struct rt_processor* proc = rt_lookup_processor (proxy_pid);
-		if (proc && proc->remote_pid == remote_pid && proc->connection && proc->connection->remote_nid == connection->remote_nid) {
-			eif_pthread_mutex_unlock (proxyproc_mutex);
-			*result = emalloc (egc_any_dtype);
-			RTS_PID (*result) = proxy_pid;
-			if (proc && proc->remote_pid == remote_pid && proc->connection && proc->connection->remote_nid == connection->remote_nid) {
-				return T_OK;
-			} else {
-				*result = NULL;
-			}
-		}
-	}
 	
+	struct eif_dscoop_processor_reference pref = {
+		connection->remote_nid, remote_pid
+	};
+	
+	// First we create an anchor
 	*result = emalloc (egc_any_dtype);
-	//(*result) = eif_create (egc_any_dtype);
-
-	int error = rt_processor_registry_create_region (&proxy_pid, EIF_FALSE);
-	
-	if (error) {
-		eif_pthread_mutex_unlock (proxyproc_mutex);
-		return error;
+	if (eif_dscoop_proxy_processors_table_has (&eif_dscoop_proxy_processors_table, pref)) {
+		proxy_pid = eif_dscoop_proxy_processors_table_item (&eif_dscoop_proxy_processors_table, pref);
+		RTS_PID (*result) = proxy_pid;
 	}
 	
-	RTS_PID (*result) = proxy_pid;
+	int error = T_OK;
 	
-	rt_processor_registry_activate (proxy_pid);
+	if (proxy_pid == EIF_NULL_PROCESSOR) {
+		// There exist no proxy processor, so we create one
+		
+		// First we create the region
+		error = rt_processor_registry_create_region (&proxy_pid, EIF_FALSE);
 
-	struct rt_processor* proc = rt_get_processor (proxy_pid);
-	proc->connection = connection;
-	proc->remote_pid = remote_pid;
-	
-	for (unsigned i = 0; i < eif_dscoop_proxy_processor_map_t_count (&eif_dscoop_proxy_processor_map); i++) {
-		struct eif_dscoop_proxy_processor_mapping procmap = eif_dscoop_proxy_processor_map_t_item(&eif_dscoop_proxy_processor_map, i);
-		if (procmap.remote_pid == remote_pid &&	procmap.remote_nid == connection->remote_nid) {
-			procmap.proxy_pid = proxy_pid;
-			found = EIF_TRUE;
-			break;
+		if (error) {
+			*result = NULL;
+		} else {
+			RTS_PID (*result) = proxy_pid;
+
+			// Starting the processor
+			rt_processor_registry_activate (proxy_pid);
+
+			// Changing the processor to a proxy processor:
+			struct rt_processor* proc = rt_get_processor (proxy_pid);
+			proc->connection = connection;
+			proc->remote_pid = remote_pid;
+
+			// Adding the proxy processor to the proxy processor table
+			eif_dscoop_proxy_processors_table_extend (
+					&eif_dscoop_proxy_processors_table, 
+					pref, proxy_pid);
 		}
 	}
-	
-	if (!found) {
-		struct eif_dscoop_proxy_processor_mapping procmap;
-		procmap.proxy_pid = proxy_pid;
-		procmap.remote_nid = connection->remote_nid;
-		procmap.remote_pid = remote_pid;
-		eif_dscoop_proxy_processor_map_t_extend (&eif_dscoop_proxy_processor_map, procmap);
-	}
-	
 	eif_pthread_mutex_unlock (proxyproc_mutex);
-	
-	return T_OK;
-}
 
-struct eif_dscoop_proxy_mapping* eif_dscoop_get_proxy_mapping (EIF_NATURAL_64 remote_nid, EIF_NATURAL_32 remote_pid, EIF_NATURAL_32 remote_oid)
-{
-	// Look for the proxy object
-	for (unsigned i = 0; i < eif_dscoop_proxy_map_t_count (&eif_dscoop_proxy_map); i++) 
-	{
-		struct eif_dscoop_proxy_mapping *mapping = eif_dscoop_proxy_map_t_item_pointer(&eif_dscoop_proxy_map, i);
-		if (!eif_access(mapping->proxy_obj)) {
-			mapping->remote_oid = 0;
-			mapping->remote_pid = 0;
-			mapping->remote_nid = 0;
-		} else if (
-			mapping->remote_oid == remote_oid &&
-			mapping->remote_pid == remote_pid &&
-			mapping->remote_nid == remote_nid
-			) 
-		{
-			return mapping;
-		}
-	}
-	return NULL;
+	return error;
 }
 
 // Retrieves the proxy object for the given sei reference and type
@@ -487,72 +575,59 @@ struct eif_dscoop_proxy_mapping* eif_dscoop_get_proxy_mapping (EIF_NATURAL_64 re
 rt_public EIF_REFERENCE eif_dscoop_get_proxy (EIF_NATURAL_64 remote_nid, EIF_NATURAL_32 remote_pid, EIF_NATURAL_32 remote_oid, const char *type)
 {
 	EIF_GET_CONTEXT
-	
+			
 	struct eif_dscoop_connection * connection = eif_dscoop_get_connection (remote_nid);
-	if (!connection) {
-		eraise ("No connection to target node", EN_PROG);
+	EIF_ENCODED_TYPE tid = eif_type_id ((char *)type);
+	
+	if (!connection || tid == EIF_NO_TYPE) {
 		return NULL;
 	}
+
+	EIF_REFERENCE result = NULL;
+	RT_GC_PROTECT (result);
+	
 	EIF_ENTER_C;
 	eif_pthread_mutex_lock (proxyobj_mutex);
 	EIF_EXIT_C;
 
-	struct eif_dscoop_proxy_mapping *mapping = eif_dscoop_get_proxy_mapping (remote_nid, remote_pid, remote_oid);
+	struct eif_dscoop_reference ref = {
+		remote_nid, remote_pid, remote_oid
+	};
 	
-	if (mapping) {
-		eif_pthread_mutex_unlock (proxyobj_mutex);
-		return eif_access (mapping->proxy_obj);
-	}
-
-	mapping = eif_dscoop_get_proxy_mapping (0, 0, 0);
-
-	if (!mapping) {
-		struct eif_dscoop_proxy_mapping new;
-		new.proxy_obj = NULL;
-		new.remote_oid = 0;
-		new.remote_nid = 0;
-		new.remote_pid = 0;
-		eif_dscoop_proxy_map_t_extend (&eif_dscoop_proxy_map, new);
-		mapping = eif_dscoop_proxy_map_t_last_pointer (&eif_dscoop_proxy_map);
+	EIF_OBJECT weak_result = eif_dscoop_proxy_table_item (&eif_dscoop_proxy_table, ref);
+	if (weak_result) {
+		result = eif_accessf (weak_result);
+		if (!result) {
+			// There was a proxy object of the correct type, but it since got collected
+			// So we remove the entry from the table
+			eif_wean (weak_result);
+			eif_dscoop_proxy_table_remove (&eif_dscoop_proxy_table, ref, NULL);
+		}
 	}
 	
-	// Proxy object was not found, we need to create one
-	mapping->remote_oid = remote_oid;
-	mapping->remote_pid = remote_pid;
-	mapping->remote_nid = remote_nid;
+	if (!result) {
+		// All proxy objects are actually from type DSCOOP_PROXY_OBJECT
+		result = emalloc(eif_decoded_type(eif_get_eif_dscoop_proxy_dtype ()).id);
+		eif_dscoop_proxy_table_extend (&eif_dscoop_proxy_table, ref, eif_create_weak_reference (result));
+		// But they appear to be from the type specified by the server
+		union overhead *zone = HEADER(result);
+		zone->ov_dftype = eif_decoded_type(tid).id;
+		ei_set_natural_32_field (0, result, remote_oid);
 
-	// All proxy objects are actually from type DSCOOP_PROXY_OBJECT
-	EIF_REFERENCE proxy = emalloc(eif_decoded_type(eif_get_eif_dscoop_proxy_dtype ()).id);
-	RT_GC_PROTECT (proxy);
-	
-//	EIF_TYPE l_ftype = eif_decoded_type(eif_get_eif_dscoop_proxy_dtype());
-	// But they appear to be from the type specified by the server, and are external
-	EIF_TYPE_ID tid = eif_type_id ((char *)type);
-	ei_set_natural_32_field (0, proxy, remote_oid);
-
-	Dftype(proxy) = tid;
-
-	//We need to keep a weak reference so we avoid having multiple proxy objects for one object
-	mapping->proxy_obj = eif_create_weak_reference (proxy);
-	
-	// Now we have a proxy object, but it does not have the right processor attached
-	EIF_REFERENCE anchor = NULL;
-	RT_GC_PROTECT (anchor);
-	// This call invalidates unprotected references!
-	int error = eif_dscoop_get_proxy_processor (&anchor, connection, remote_pid);
-	if (error) {
-		eif_pthread_mutex_unlock (proxyobj_mutex);
+		EIF_REFERENCE anchor = NULL;
+		RT_GC_PROTECT (anchor);
+		// This call invalidates unprotected references!
+		int error = eif_dscoop_get_proxy_processor (&anchor, connection, remote_pid);
+		if (!error) {
+			RTS_PID (result) = RTS_PID (anchor);
+		}
+		// We do not need the anchor anymore, since we have the proxy object in place
 		RT_GC_WEAN (anchor);
-		RT_GC_WEAN (proxy);
-		return NULL;
 	}
-	
-	RTS_PID (proxy) = RTS_PID (anchor);
+	eif_dscoop_release_connection (connection);
 	eif_pthread_mutex_unlock (proxyobj_mutex);
-	// We do not need the anchor anymore, since we have the proxy object in place
-	RT_GC_WEAN (anchor);
-	RT_GC_WEAN (proxy);
-	return proxy;
+	RT_GC_WEAN (result);
+	return result;
 }
 
 RT_DECLARE_VECTOR_SIZE_FUNCTIONS (rt_request_group, struct rt_private_queue*)
@@ -695,7 +770,7 @@ rt_public call_data* eif_dscoop_create_scoop_call (EIF_REFERENCE target, EIF_TYP
  * @param arg the argument to set
  * @param n the index of the argument in the argument list
  */
-rt_public void eif_dscoop_set_call_data_argument (call_data* args, EIF_TYPED_VALUE arg, unsigned n)
+void eif_dscoop_set_call_data_argument (call_data* args, EIF_TYPED_VALUE arg, unsigned n)
 {
 	args -> argument [n] = arg;
 }
@@ -704,7 +779,7 @@ rt_public void eif_dscoop_set_call_data_argument (call_data* args, EIF_TYPED_VAL
  * Sends a RELEASE message for the object referenced by `self'
  * @param self the object to be released
  */
-rt_public void eif_dscoop_send_release (EIF_REFERENCE self)
+void eif_dscoop_send_release (EIF_REFERENCE self)
 {
 	struct eif_dscoop_message message;
 	EIF_NATURAL_32 oid = eif_dscoop_oid_of_proxy (self);
@@ -717,123 +792,102 @@ rt_public void eif_dscoop_send_release (EIF_REFERENCE self)
 
 /*
  * Release an object exported to `client_nid'. This makes the object available
- * for garbage collecting unless it is exported to some other node or locally
- * referenced.
+ * for garbage collecting unless it is exported to some other node or referenced
+ * by a local root. It does not remove it from the set of exported objects of
+ * the client connection, this has to be done by the caller.
  */
-rt_public EIF_BOOLEAN eif_dscoop_release_exported_object (EIF_NATURAL_32 oid, EIF_NATURAL_64 client_nid)
+EIF_BOOLEAN eif_dscoop_release_exported_object (EIF_NATURAL_32 oid, EIF_NATURAL_64 client_nid)
 {
 	eif_pthread_mutex_lock (exported_mutex);
-	size_t ocount = eif_dscoop_exported_objects_t_count (&eif_dscoop_exported_objects);
-	for (size_t i = 0; i < ocount; i++) 
-	{
-		struct eif_dscoop_exported_object* export;
-		export = eif_dscoop_exported_objects_t_item_pointer (&eif_dscoop_exported_objects, i);
-		if (export->oid == oid) 
-		{
-			size_t count = eif_natural_64_list_count (&export->clients);
-			for (size_t j = 0; j < count; j++) {
-				if (eif_natural_64_list_item (&export->clients, j) == client_nid) {
-					for (j++; j < count; j++) {
-						eif_natural_64_list_put (&export->clients, eif_natural_64_list_item (&export->clients, j), j - 1);
-					}
-					eif_natural_64_list_remove_last (&export->clients);
-					if (count == 1) {
-						eif_wean (export->local_obj);
-						export->local_obj = NULL;
-						export->oid = 0;
-						eif_natural_64_list_deinit (&export->clients);
-					}
-					eif_pthread_mutex_unlock (exported_mutex);
-					return EIF_TRUE;
-				}
-			}
-		}
+	
+	struct eif_dscoop_oid_ref_table* table = 
+		eif_dscoop_export_table_item_pointer (&eif_dscoop_export_table, client_nid);
+	EIF_BOOLEAN result = EIF_FALSE;
+	if (table) {
+		result = eif_dscoop_oid_ref_table_remove (table, oid, NULL);
 	}
 	eif_pthread_mutex_unlock (exported_mutex);
-	return EIF_FALSE;	
+	return result;	
 }
 
-rt_public EIF_NATURAL_32 eif_dscoop_export_object (EIF_REFERENCE obj, EIF_NATURAL_64 client_nid)
+EIF_NATURAL_32 eif_dscoop_export_object (EIF_REFERENCE ref, EIF_NATURAL_64 client_nid)
+{      
+	EIF_OBJECT obj = eif_protect (ref);
+
+	eif_pthread_mutex_lock (exported_mutex);
+	EIF_DSCOOP_OID oid = rt_dscoop_oid_of_object (eif_access (obj)); 
+
+	struct eif_dscoop_oid_ref_table* table;
+	EIF_BOOLEAN table_exists = eif_dscoop_export_table_has (&eif_dscoop_export_table, client_nid);
+	if (table_exists) {
+		table = eif_dscoop_export_table_item_pointer (&eif_dscoop_export_table, client_nid);
+	} else {
+		eif_dscoop_export_table_extend (&eif_dscoop_export_table, client_nid, (struct eif_dscoop_oid_ref_table){0});
+		table = eif_dscoop_export_table_item_pointer (&eif_dscoop_export_table, client_nid);
+		eif_dscoop_oid_ref_table_init (table, 1);
+	}
+	if (!eif_dscoop_oid_ref_table_has (table, oid)) {
+		eif_dscoop_oid_ref_table_extend (table, oid, eif_access (obj));
+	}
+	eif_pthread_mutex_unlock (exported_mutex);
+	eif_wean (obj);
+	return oid;
+}
+
+EIF_BOOLEAN rt_dscoop_peer_has_access_to_object (EIF_DSCOOP_NID nid, EIF_DSCOOP_OID oid) {
+
+	EIF_BOOLEAN result = EIF_FALSE;
+	
+	eif_pthread_mutex_lock (exported_mutex);
+
+	struct eif_dscoop_oid_ref_table* table
+		= eif_dscoop_export_table_item_pointer (&eif_dscoop_export_table, nid);
+
+	if (table && eif_dscoop_oid_ref_table_has (table, oid)) {
+		result = EIF_TRUE;
+	}
+
+	eif_pthread_mutex_unlock (exported_mutex);
+	
+	return result;
+}
+
+EIF_DSCOOP_OID rt_dscoop_oid_of_object (EIF_REFERENCE ref)
 {                    
+	eif_pthread_mutex_lock (exported_mutex);
 	static EIF_NATURAL_32 next_oid = 1;
-	eif_pthread_mutex_lock (exported_mutex);
-	for (size_t i = 0; i < eif_dscoop_exported_objects_t_count (&eif_dscoop_exported_objects); i++) 
-	{
-		struct eif_dscoop_exported_object* export;
-		export = eif_dscoop_exported_objects_t_item_pointer (&eif_dscoop_exported_objects, i);
-		if (eif_access(export->local_obj) == obj) 
-		{
-			for (unsigned j = 0; j < eif_natural_64_list_count (&export->clients); j++) {
-				if (eif_natural_64_list_item (&export->clients, j) == client_nid) {
-					eif_pthread_mutex_unlock (exported_mutex);
-					return export->oid;
-				}
-			}
-			eif_natural_64_list_extend (&export->clients, client_nid);
-			eif_pthread_mutex_unlock (exported_mutex);
-			return export->oid;
-		}
+	
+	EIF_DSCOOP_OID oid = 0;
+	if (object_oid_table_need_rehash) {
+		object_oid_table_need_rehash = EIF_FALSE;
+		eif_dscoop_object_oid_table_rehash (&eif_dscoop_object_oid_table, 0);
 	}
-	struct eif_dscoop_exported_object export;
-	export.local_obj = eif_protect(obj);
-	export.oid = next_oid++;
-	eif_natural_64_list_init (&export.clients);
-	eif_natural_64_list_extend (&export.clients, client_nid);
-	for (size_t i = 0; i < eif_dscoop_exported_objects_t_count (&eif_dscoop_exported_objects); i++) 
-	{
-		if (!eif_dscoop_exported_objects_t_item_pointer (&eif_dscoop_exported_objects, i)->local_obj) 
-		{
-			eif_dscoop_exported_objects_t_put (&eif_dscoop_exported_objects, i, export);
-			eif_pthread_mutex_unlock (exported_mutex);
-			return export.oid;
-		}
+	oid = eif_dscoop_object_oid_table_item (&eif_dscoop_object_oid_table, ref);
+	if (!oid) {
+		oid = next_oid++;
+		eif_dscoop_object_oid_table_extend (&eif_dscoop_object_oid_table, ref, oid);
 	}
-	eif_dscoop_exported_objects_t_extend (&eif_dscoop_exported_objects, export);
+	
 	eif_pthread_mutex_unlock (exported_mutex);
-	return export.oid;
+	return oid;
 }
 
-rt_public EIF_NATURAL_32 eif_dscoop_get_exported_object_id (EIF_REFERENCE obj, EIF_NATURAL_64 client_nid)
-{                    
+EIF_REFERENCE rt_dscoop_exported_object (EIF_DSCOOP_NID nid, EIF_DSCOOP_OID oid) {
+	EIF_REFERENCE ref = NULL;
+	
 	eif_pthread_mutex_lock (exported_mutex);
-	for (unsigned i = 0; i < eif_dscoop_exported_objects_t_count (&eif_dscoop_exported_objects); i++) 
-	{
-		struct eif_dscoop_exported_object* export;
-		export = eif_dscoop_exported_objects_t_item_pointer (&eif_dscoop_exported_objects, i);
-		if (eif_access(export->local_obj) == obj) 
-		{
-			for (unsigned j = 0; j < eif_natural_64_list_count (&export->clients); j++) {
-				if (eif_natural_64_list_item (&export->clients, j) == client_nid) {
-					eif_pthread_mutex_unlock (exported_mutex);
-					return export->oid;
-				}
-			}
-			break;
-		}
-	}
-	eif_pthread_mutex_unlock (exported_mutex);
-	return 0;
-}
 
-rt_public EIF_REFERENCE eif_dscoop_get_exported_object (EIF_NATURAL_32 oid, EIF_NATURAL_64 requestor_nid) {
-	eif_pthread_mutex_lock (exported_mutex);
-	struct eif_dscoop_exported_object* export;
-	for (unsigned i = 0; i < eif_dscoop_exported_objects_t_count (&eif_dscoop_exported_objects); i++) 
-	{
-		export = eif_dscoop_exported_objects_t_item_pointer (&eif_dscoop_exported_objects, i);
-		if (export->oid == oid) 
-		{
-			for (unsigned j = 0; j < eif_natural_64_list_count (&export->clients); j++) {
-				if (eif_natural_64_list_item (&export->clients, j) == requestor_nid || !requestor_nid) {
-					eif_pthread_mutex_unlock (exported_mutex);
-					return eif_access (export->local_obj);
-				}
-			}
-			break;
-		}
+	struct eif_dscoop_oid_ref_table* table
+		= eif_dscoop_export_table_item_pointer (&eif_dscoop_export_table, nid);
+	
+	if (table) {
+		//Checking that the object is actually available for the client
+		ref = eif_dscoop_oid_ref_table_item (table, oid);
 	}
+	
 	eif_pthread_mutex_unlock (exported_mutex);
-	return NULL;
+	
+	return ref;
 }
 
 rt_public EIF_NATURAL_64 eif_dscoop_node_id()
@@ -857,10 +911,10 @@ rt_public EIF_TYPE_ID eif_get_eif_dscoop_proxy_dtype()
 	return proxy_type;
 }
 
-rt_public EIF_REFERENCE eif_dscoop_get_remote_object (EIF_NATURAL_64 nid, EIF_NATURAL_32 pid, EIF_NATURAL_32 oid, const char * type, EIF_NATURAL_64 supplier_nid)
+rt_public EIF_REFERENCE eif_dscoop_get_remote_object (EIF_NATURAL_64 nid, EIF_NATURAL_32 pid, EIF_NATURAL_32 oid, const char * type, EIF_DSCOOP_NID requestor)
 {
 	if (nid == eif_dscoop_node_id()) {
-		return eif_dscoop_get_exported_object (oid, supplier_nid);
+		return rt_dscoop_exported_object (oid, requestor);
 	} else {
 		return eif_dscoop_get_proxy (nid, pid, oid, type);
 	}
@@ -896,22 +950,10 @@ void eif_dscoop_add_call_from_message (struct rt_processor* self, struct eif_dsc
 	EIF_NATURAL_32 target_id = eif_dscoop_message_get_natural_argument (message, 1);
 	EIF_NATURAL_64 sender = eif_dscoop_message_sender(message);
 	
-	EIF_REFERENCE target = NULL;
-	unsigned refvars = 0;
-	
-	RT_GC_PROTECT (target);
-	refvars++; // Accounting for the (local) target
-	target = eif_dscoop_get_exported_object (target_id, self->connection->remote_nid);
-	
 	EIF_BOOLEAN expects_result = eif_dscoop_message_subject (message) == S_QCALL;
 	EIF_BOOLEAN expects_synchronization = expects_result || eif_dscoop_message_subject (message) == S_SCALL;
 	
 	int error = T_OK;
-	
-	// TODO: Check target for being exported
-	if (!target) {
-		error = T_INVALID_ARGUMENT;
-	}
 	
 	char* cname = NULL;
 	char* rname = NULL;
@@ -928,22 +970,29 @@ void eif_dscoop_add_call_from_message (struct rt_processor* self, struct eif_dsc
 			char* address;
 			EIF_NATURAL_16 port = 0;
 			EIF_NATURAL_64 nid = eif_dscoop_message_get_node_argument (message, i, &address, &port);
-			if (port && nid && address && !eif_dscoop_get_connection (nid)) {
+
+			eif_pthread_mutex_lock (conn_mutex);
+			EIF_BOOLEAN has_connection = eif_dscoop_connection_table_has (&eif_dscoop_connections, nid);
+			eif_pthread_mutex_unlock (conn_mutex);					
+			if (port && nid && address && !has_connection) {
 				eif_dscoop_connect (address, port);
 			}
-			if (address)
+
+			if (address) {
 				free (address);
+			}
 		}
 	}
 	
 	call_data* cd = 0;
 	struct rt_private_queue* pq = 0;
-	EIF_TYPED_VALUE result;
+	EIF_TYPED_VALUE result = { 0 };
 	result.type = SK_INVALID;
+	result.item.r = NULL;
 	if (!error) {
-		// TODO: Check routine name for validity
 		EIF_TYPE context_type = eif_type_id2 (cname);
-		if (context_type.id == INVALID_DTYPE) {
+		EIF_REFERENCE target = rt_dscoop_exported_object (self->connection->remote_nid, target_id);
+		if (context_type.id == INVALID_DTYPE || !target) {
 			error = T_INVALID_ARGUMENT;
 		} else {
 			cd = eif_dscoop_create_scoop_call(target, context_type.id, rname, argument_count);
@@ -956,6 +1005,7 @@ void eif_dscoop_add_call_from_message (struct rt_processor* self, struct eif_dsc
 	if (!error && expects_synchronization)
 		cd->is_synchronous = EIF_TRUE;
 	
+	unsigned refvars = 0;
 	if (!error) {
 		RT_GC_PROTECT (cd->target);
 		refvars++; // Accounting for the target in the call data struct
@@ -970,7 +1020,7 @@ void eif_dscoop_add_call_from_message (struct rt_processor* self, struct eif_dsc
 			}
 		}
 
-		struct eif_define def = eif_find_feature (rname, eif_type_by_reference (target), 0);
+		struct eif_define def = eif_find_feature (rname, eif_type_by_reference (cd->target), 0);
 		EIF_TYPE_ID rtype = def.signature->result_type;
 		if (rtype != INVALID_DTYPE) {
 			cd->is_synchronous = EIF_TRUE;
@@ -1030,15 +1080,22 @@ void eif_dscoop_add_call_from_message (struct rt_processor* self, struct eif_dsc
 		}
 
 		// TODO: Check that queue is locked
-		error = rt_queue_cache_retrieve (&self->cache, rt_get_processor (RTS_PID(target)), &pq);
+		error = rt_queue_cache_retrieve (&self->cache, rt_get_processor (RTS_PID(cd->target)), &pq);
 	}
+
 	if (!error) {
 		error = !rt_private_queue_is_locked (pq);
 	}
+
+	if (refvars) {
+		RT_GC_WEAN_N (refvars); //Unprotect all protected variables
+		refvars = 0;
+	}
 	if (!error) {
+		pq->client = self;
 		if (cd->is_synchronous && result.type == SK_REF) {
 			RT_GC_PROTECT (result.item.r);
-			refvars++;
+			refvars = 1;
 		}
 		rt_private_queue_log_call(pq, self, cd);
 	}
@@ -1089,15 +1146,18 @@ void eif_dscoop_add_call_from_message (struct rt_processor* self, struct eif_dsc
 			} else {
 				eif_dscoop_message_reply (message, S_FAIL);
 			}
+			eif_dscoop_release_connection (result_connection);
 		} else {
 			eif_dscoop_message_reply (message, S_OK);
 		}
 	} else {
 		eif_dscoop_message_reply (message, S_FAIL);
 	}
-	RT_GC_WEAN_N (refvars); //Unprotect all protected variables
 	eif_dscoop_message_send (message);
 	eif_dscoop_message_dispose (message);
+	if (refvars) {
+		RT_GC_WEAN_N (refvars);
+	}
 	free (message);
 }
 
@@ -1238,7 +1298,7 @@ void eif_dscoop_process_message (struct rt_processor* self, struct eif_dscoop_me
 rt_public void eif_dscoop_connection_set_index_object (EIF_POINTER connection, EIF_REFERENCE object) 
 {
 	struct eif_dscoop_connection *c = connection;
-	c->index_object = eif_protect(object);
+	c->index_object_ref = object;
 }
 
 rt_public EIF_REFERENCE eif_dscoop_get_remote_index (EIF_NATURAL_64 remote_nid)
@@ -1254,63 +1314,43 @@ rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, 
 {
 	EIF_GET_CONTEXT
 	
-	struct eif_dscoop_message* message = eif_dscoop_message_receive_request (connection);
+	struct eif_dscoop_message* message = malloc (sizeof (struct eif_dscoop_message));
+	eif_dscoop_message_allocate (message);
 
-	if (!message) {
+	if (!eif_dscoop_message_receive_request (connection, message)) {
 		// Connection terminated
+		eif_dscoop_message_dispose (message);
+		free (message);
+
 		// Call revert on all proxy processors belonging to this connection
 
 		// First we need to gather the proxy processors
-		struct eif_natural_64_list list;
-		eif_natural_64_list_init (&list);
+		struct eif_nid_list list;
+		eif_nid_list_init (&list);
 		EIF_ENTER_C;
 		eif_pthread_mutex_lock (proxyproc_mutex);
 		EIF_EXIT_C;
-		for (unsigned i = 0; i < eif_dscoop_proxy_processor_map_t_count (&eif_dscoop_proxy_processor_map); i++) {
-			struct eif_dscoop_proxy_processor_mapping procmap = eif_dscoop_proxy_processor_map_t_item(&eif_dscoop_proxy_processor_map, i);
-			if (procmap.remote_nid == connection->remote_nid) {
-				eif_natural_64_list_extend (&list, procmap.proxy_pid);
-
-				procmap.remote_nid = 0;
-				procmap.remote_pid = 0;
-				procmap.proxy_pid = 0;
-
-				break;
+		
+		struct eif_dscoop_proxy_processors_table_iterator it =
+				eif_dscoop_proxy_processors_table_iterator (&eif_dscoop_proxy_processors_table);
+		while (!eif_dscoop_proxy_processors_table_iterator_after (&it)) {
+			if (eif_dscoop_proxy_processors_table_iterator_key (&it).nid == connection->remote_nid) {
+				eif_nid_list_extend (&list, eif_dscoop_proxy_processors_table_iterator_item (&it));
 			}
+			eif_dscoop_proxy_processors_table_iterator_forth (&it);
 		}
 		eif_pthread_mutex_unlock (proxyproc_mutex);
 
 		//Then we revert all of their transactions
 		//TODO: Maybe we should do all reverts at once, and not one after another?
-		for (size_t i = 0; i < eif_natural_64_list_count (&list); i++) {
-			struct rt_processor* proc = rt_get_processor (eif_natural_64_list_item (&list, i));
+		for (size_t i = 0; i < eif_nid_list_count (&list); i++) {
+			struct rt_processor* proc = rt_get_processor (eif_nid_list_item (&list, i));
 			if (proc && proc->connection && proc->connection->remote_nid == connection->remote_nid) {
 				eif_dscoop_transaction_send_revert (self, proc);
 			}
 		}
-		eif_natural_64_list_deinit (&list);
+		eif_nid_list_deinit (&list);
 		
-		// Finally we release all the proxy objects
-		EIF_ENTER_C;
-		eif_pthread_mutex_lock (proxyobj_mutex);
-		EIF_EXIT_C;
-		for (size_t i = 0; i < eif_natural_64_list_count (&list); i++) {
-			for (size_t i = 0; i < eif_dscoop_proxy_map_t_count (&eif_dscoop_proxy_map); i++) {
-				struct eif_dscoop_proxy_mapping *mapping = eif_dscoop_proxy_map_t_item_pointer(&eif_dscoop_proxy_map, i);
-				if (!eif_access(mapping->proxy_obj)) {
-					mapping->remote_oid = 0;
-					mapping->remote_pid = 0;
-					mapping->remote_nid = 0;
-				} else if (mapping->remote_nid == connection->remote_nid) {
-					mapping->remote_oid = 0;
-					mapping->remote_pid = 0;
-					mapping->remote_nid = 0;
-					eif_wean(mapping->proxy_obj);
-				}
-			}
-		}
-		eif_pthread_mutex_unlock (proxyobj_mutex);
-
 		return T_UNKNOWN_ERROR;
 	}
 		
@@ -1326,14 +1366,15 @@ rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, 
 				eif_dscoop_message_dispose (message);
 				free (message);
 			}
+			eif_dscoop_release_connection (c);
 		}
 			break;
 		case S_INDEX:
-			if (connection->index_object) {
+			if (connection->index_object_ref) {
 				eif_dscoop_message_reply (message, S_OK);
 				EIF_TYPED_VALUE v;
 				v.type = SK_REF;
-				v.item.r = eif_access (connection->index_object);
+				v.item.r = connection->index_object_ref;
 				RT_GC_PROTECT (v.item.r);
 				eif_dscoop_message_add_value_argument (message, &v, connection->remote_nid);
 				RT_GC_WEAN (v.item.r);
@@ -1369,14 +1410,15 @@ rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, 
 			if (eif_dscoop_message_argument_count (message) == 2) {
 				EIF_NATURAL_32 oid = eif_dscoop_message_get_natural_argument (message, 0);
 				EIF_NATURAL_64 nid = eif_dscoop_message_get_natural_argument (message, 1);
-				// TODO: Check that the sender had access to the object
-				EIF_REFERENCE ref = eif_dscoop_get_exported_object (oid, eif_dscoop_message_sender (message));
+				EIF_REFERENCE ref = rt_dscoop_exported_object (connection->remote_nid, oid);
+				RT_GC_PROTECT (ref);
 				if (ref) {
 					eif_dscoop_export_object (ref, nid);
 					eif_dscoop_message_reply (message, S_OK);
 				} else {
 					eif_dscoop_message_reply (message, S_FAIL);
 				}
+				RT_GC_WEAN (ref);
 			} else {
 				eif_dscoop_message_reply (message, S_FAIL);
 			}
@@ -1410,7 +1452,7 @@ rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, 
 					eif_dscoop_message_dispose (message);
 					free (message);
 				} else {
-					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_access (message->anchor)));
+					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_accessf (message->anchor)));
 					rt_message_channel_send (&proc->queue_of_queues, SCOOP_DSCOOP_MESSAGE, self, NULL, NULL, message);
 
 					// It is possible that a PRELOCK is sent while we still wait,
@@ -1439,7 +1481,7 @@ rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, 
 					eif_dscoop_message_dispose (message);
 					free (message);
 				} else {
-					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_access (message->anchor)));
+					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_accessf (message->anchor)));
 					rt_message_channel_send (&proc->queue_of_queues, SCOOP_DSCOOP_MESSAGE, self, NULL, NULL, message);
 				}
 			} else {
@@ -1462,7 +1504,7 @@ rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, 
 					eif_dscoop_message_dispose (message);
 					free (message);
 				} else {
-					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_access (message->anchor)));
+					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_accessf (message->anchor)));
 					rt_message_channel_send (&proc->queue_of_queues, SCOOP_DSCOOP_MESSAGE, self, NULL, NULL, message);
 				}
 			} else {
@@ -1485,7 +1527,7 @@ rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, 
 					eif_dscoop_message_dispose (message);
 					free (message);
 				} else {
-					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_access (message->anchor)));
+					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_accessf (message->anchor)));
 					rt_message_channel_send (&proc->queue_of_queues, SCOOP_DSCOOP_MESSAGE, self, NULL, NULL, message);
 				}
 			} else {
@@ -1511,7 +1553,7 @@ rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, 
 					eif_dscoop_message_dispose (message);
 					free (message);
 				} else {
-					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_access (message->anchor)));
+					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_accessf (message->anchor)));
 					rt_message_channel_send (&proc->queue_of_queues, SCOOP_DSCOOP_MESSAGE, self, NULL, NULL, message);
 				}
 			} else {
@@ -1572,7 +1614,7 @@ void eif_dscoop_transaction_revert (struct rt_processor* self)
 			struct eif_dscoop_compensation_list* registered = &q->compensations;
 			for (ssize_t k = eif_dscoop_compensation_list_count (registered) - 1; k >= 0; k--) {
 				call_data* l_scoop_call_data = NULL;
-				RTS_AC (0, eif_access(eif_dscoop_compensation_list_item (registered, k).agent));
+				RTS_AC (0, eif_accessf(eif_dscoop_compensation_list_item (registered, k).agent));
 #ifdef WORKBENCH
 				l_scoop_call_data->routine_id = routineid;
 #else
@@ -1588,7 +1630,7 @@ void eif_dscoop_transaction_revert (struct rt_processor* self)
 //	//qsort (list.area, list.count, sizeof (struct eif_dscoop_compensation), (__compar_fn_t) eif_dscoop_compensation_compare);
 //	// Call agents in reverse order
 //	for (ssize_t i = list.count - 1; i >= 0; i--) {
-//		p (eif_access(list.area[i].agent));
+//		p (eif_accessf(list.area[i].agent));
 //	}
 }
 
@@ -1643,4 +1685,112 @@ rt_public void eif_builtin_DSCOOP_COMPENSATION_SUPPORT_register_compensation(EIF
 	comp.serial_no = rt_processor_next_compensation_no (proc);
 	comp.agent = eif_protect (agent);
 	eif_dscoop_compensation_list_extend (list, comp);
+}
+
+void rt_dscoop_mark_exported(MARKER marking) {
+	if (eif_dscoop_initialized) {
+		{
+			struct eif_dscoop_export_table_iterator it
+				= eif_dscoop_export_table_iterator (&eif_dscoop_export_table);
+
+			while (!eif_dscoop_export_table_iterator_after(&it)) {
+				struct eif_dscoop_oid_ref_table* table =
+					eif_dscoop_export_table_iterator_item_pointer(&it);
+
+				if (table) {
+					struct eif_dscoop_oid_ref_table_iterator it2
+						= eif_dscoop_oid_ref_table_iterator (table);
+
+					while (!eif_dscoop_oid_ref_table_iterator_after(&it2)) {
+						EIF_REFERENCE* rref = eif_dscoop_oid_ref_table_iterator_item_pointer(&it2);
+						rt_mark_ref (marking, rref);
+						eif_dscoop_oid_ref_table_iterator_forth(&it2);
+					}
+				}
+
+				eif_dscoop_export_table_iterator_forth(&it);
+			}
+		}
+
+		{
+			struct eif_dscoop_connection_table_iterator it
+				= eif_dscoop_connection_table_iterator (&eif_dscoop_connections);
+
+			while (!eif_dscoop_connection_table_iterator_after(&it)) {
+				struct eif_dscoop_connection* connection =
+					eif_dscoop_connection_table_iterator_item(&it);
+				if (connection->index_object_ref) {
+					rt_mark_ref (marking, &connection->index_object_ref);
+				}
+				eif_dscoop_connection_table_iterator_forth(&it);
+			}
+		}
+	}
+}
+
+void rt_dscoop_deregister_proxy_processor (EIF_DSCOOP_NID nid, EIF_DSCOOP_PID pid) {
+	EIF_ENTER_C;
+	eif_pthread_mutex_lock (proxyproc_mutex);
+	EIF_EXIT_C;
+	struct eif_dscoop_processor_reference pref = {
+		nid, pid
+	};
+	eif_dscoop_proxy_processors_table_remove (&eif_dscoop_proxy_processors_table, pref, NULL);
+	eif_pthread_mutex_unlock (proxyproc_mutex);
+
+	// Cleaning up proxy object cache
+	EIF_ENTER_C;
+	eif_pthread_mutex_lock (proxyobj_mutex);
+	EIF_EXIT_C;
+	struct eif_dscoop_proxy_table_iterator it = 
+		eif_dscoop_proxy_table_iterator (&eif_dscoop_proxy_table);
+	while (!eif_dscoop_proxy_table_iterator_after (&it)) {
+		if (!eif_accessf (eif_dscoop_proxy_table_iterator_item (&it)) ||
+				(eif_dscoop_proxy_table_iterator_key (&it).nid == nid &&
+				eif_dscoop_proxy_table_iterator_key (&it).pid == pid)) {
+			eif_wean (eif_dscoop_proxy_table_iterator_item (&it));
+			eif_dscoop_proxy_table_iterator_remove (&it);
+		}
+		eif_dscoop_proxy_table_iterator_forth (&it);
+	}
+	eif_pthread_mutex_unlock (proxyobj_mutex);
+}
+
+
+void rt_dscoop_update_weak_references () {
+	if (eif_dscoop_initialized) {
+		struct eif_dscoop_object_oid_table_iterator it
+			= eif_dscoop_object_oid_table_iterator (&eif_dscoop_object_oid_table);
+
+		int generational = rt_g_data.status & GC_FAST;
+
+		while (!eif_dscoop_object_oid_table_iterator_after(&it)) {
+			EIF_REFERENCE* object = 
+					eif_dscoop_object_oid_table_iterator_key_pointer(&it);
+
+			EIF_REFERENCE before = *object;
+			EIF_BOOLEAN removed = EIF_FALSE;
+
+			union overhead* zone = HEADER(*object);
+			if (zone->ov_size & B_FWD) {
+					/* If the object has moved, update the stack */
+				*object = zone->ov_fwd;
+			} else if (generational) {
+				if ((!(zone->ov_flags & EO_OLD)) && (!(zone->ov_flags & EO_MARK))) {
+						/* Object is not alive anymore since it was not marked. */
+					eif_dscoop_object_oid_table_iterator_remove (&it);
+					removed = EIF_TRUE;
+				}
+			} else if (!(zone->ov_flags & EO_MARK)) {
+					/* Object is not alive anymore since it was not marked. */
+				eif_dscoop_object_oid_table_iterator_remove (&it);
+				removed = EIF_TRUE;
+			}
+
+			if (!removed) {
+				object_oid_table_need_rehash = object_oid_table_need_rehash || before != *object;
+			}
+			eif_dscoop_object_oid_table_iterator_forth(&it);
+		}
+	}
 }
