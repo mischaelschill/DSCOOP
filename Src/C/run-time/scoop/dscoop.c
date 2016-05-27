@@ -16,7 +16,7 @@
 #include "rt_dscoop_message.h"
 #include "rt_struct.h"
 
-RT_DECLARE_VECTOR (eif_nid_list, EIF_DSCOOP_NID)
+RT_DECLARE_VECTOR (eif_pid_list, EIF_DSCOOP_PID)
 
 #define RT_CHT_NAMESPACE(suffix) eif_dscoop_request_table##suffix
 #define RT_CHT_KEY_TYPE EIF_NATURAL_32
@@ -1315,7 +1315,7 @@ rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, 
 	EIF_GET_CONTEXT
 	
 	struct eif_dscoop_message* message = malloc (sizeof (struct eif_dscoop_message));
-	eif_dscoop_message_allocate (message);
+	eif_dscoop_message_init (message, 0, 0);
 
 	if (!eif_dscoop_message_receive_request (connection, message)) {
 		// Connection terminated
@@ -1325,8 +1325,8 @@ rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, 
 		// Call revert on all proxy processors belonging to this connection
 
 		// First we need to gather the proxy processors
-		struct eif_nid_list list;
-		eif_nid_list_init (&list);
+		struct eif_pid_list list;
+		eif_pid_list_init (&list);
 		EIF_ENTER_C;
 		eif_pthread_mutex_lock (proxyproc_mutex);
 		EIF_EXIT_C;
@@ -1335,7 +1335,7 @@ rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, 
 				eif_dscoop_proxy_processors_table_iterator (&eif_dscoop_proxy_processors_table);
 		while (!eif_dscoop_proxy_processors_table_iterator_after (&it)) {
 			if (eif_dscoop_proxy_processors_table_iterator_key (&it).nid == connection->remote_nid) {
-				eif_nid_list_extend (&list, eif_dscoop_proxy_processors_table_iterator_item (&it));
+				eif_pid_list_extend (&list, eif_dscoop_proxy_processors_table_iterator_item (&it));
 			}
 			eif_dscoop_proxy_processors_table_iterator_forth (&it);
 		}
@@ -1343,13 +1343,13 @@ rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, 
 
 		//Then we revert all of their transactions
 		//TODO: Maybe we should do all reverts at once, and not one after another?
-		for (size_t i = 0; i < eif_nid_list_count (&list); i++) {
-			struct rt_processor* proc = rt_get_processor (eif_nid_list_item (&list, i));
+		for (size_t i = 0; i < eif_pid_list_count (&list); i++) {
+			struct rt_processor* proc = rt_get_processor (eif_pid_list_item (&list, i));
 			if (proc && proc->connection && proc->connection->remote_nid == connection->remote_nid) {
 				eif_dscoop_transaction_send_revert (self, proc);
 			}
 		}
-		eif_nid_list_deinit (&list);
+		eif_pid_list_deinit (&list);
 		
 		return T_UNKNOWN_ERROR;
 	}
