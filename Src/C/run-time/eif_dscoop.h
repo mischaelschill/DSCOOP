@@ -37,7 +37,7 @@ RT_LNK EIF_REFERENCE eif_dscoop_get_remote_index (EIF_NATURAL_64 remote_nid);
 RT_LNK void eif_dscoop_set_print_debug_messages (EIF_BOOLEAN b);
 
 RT_LNK void eif_builtin_DSCOOP_PROXY_OBJECT_send_release (EIF_REFERENCE current);
-RT_LNK EIF_INTEGER eif_builtin_DSCOOP_POSTMAN_process_message_c (EIF_REFERENCE self, EIF_POINTER connection);
+RT_LNK void eif_builtin_DSCOOP_POSTMAN_process_messages_c (EIF_REFERENCE self, EIF_POINTER connection);
 RT_LNK void eif_builtin_DSCOOP_COMPENSATION_SUPPORT_register_compensation (EIF_REFERENCE current, EIF_REFERENCE agent);
 #endif
 

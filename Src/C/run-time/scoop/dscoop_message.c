@@ -1003,6 +1003,7 @@ rt_public EIF_TYPED_VALUE eif_dscoop_message_get_value_argument (struct eif_dsco
 	REQUIRE ("argument_is_value", eif_dscoop_message_is_argument_value (message));
 	EIF_GET_CONTEXT
 	EIF_TYPED_VALUE result;
+	result.type = SK_INVALID;
 
 	size_t offset = message->index[n];
 	enum eif_dscoop_message_arg_type type = message->data.raw[offset];

@@ -120,7 +120,7 @@ EIF_NATURAL_64 eif_dscoop_message_get_node_argument (struct eif_dscoop_message* 
 
 EIF_BOOLEAN eif_dscoop_message_ok (struct eif_dscoop_message * message);
 
-EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, struct eif_dscoop_connection *connection);
+EIF_BOOLEAN rt_dscoop_message_handle_one (struct rt_processor* self, struct eif_dscoop_connection *connection);
 
 EIF_NATURAL_64 eif_dscoop_message_sender (struct eif_dscoop_message* msg);
 

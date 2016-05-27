@@ -111,8 +111,17 @@ EIF_BOOLEAN eif_dscoop_print_debug_messages = EIF_FALSE;
 
 // Some helper functions only used here
 
+static EIF_TYPED_VALUE rt_dscoop_scratch_result;
+
 union overhead* HEADERf(EIF_REFERENCE p)	{
 	return (((union overhead *) (p))-1);	/* Fetch header address */
+}
+
+EIF_BOOLEAN is_forwarded (EIF_REFERENCE p) {
+	union overhead* zone = HEADER(p);
+	if (zone->ov_size & B_FWD)
+		return EIF_TRUE;
+	return EIF_FALSE;
 }
 
 EIF_REFERENCE eif_accessf (EIF_OBJECT obj) {
@@ -955,17 +964,35 @@ void eif_dscoop_add_call_from_message (struct rt_processor* self, struct eif_dsc
 	
 	int error = T_OK;
 	
-	char* cname = NULL;
-	char* rname = NULL;
-	if (!error) {
-		cname = eif_dscoop_message_get_identifier_argument (message, 2);
-		rname = eif_dscoop_message_get_identifier_argument (message, 3);
-	}
+	char* cname = eif_dscoop_message_get_identifier_argument (message, 2);
+	char* rname = eif_dscoop_message_get_identifier_argument (message, 3);
+
 	int first_argument_index = 4;
+
+	// Extracting target and arguments from the message:
+	EIF_TYPED_VALUE* arguments = malloc (sizeof (EIF_TYPED_VALUE) * eif_dscoop_message_argument_count(message) - first_argument_index + 1);
+	arguments[0].type = SK_REF;
+	arguments[0].item.r = rt_dscoop_exported_object (self->connection->remote_nid, target_id);
+	unsigned refvars = 1;
+	RT_GC_PROTECT (arguments[0].item.r);
+
+	if (arguments[0].item.r == NULL) {
+		error = 1;
+	}
+
+	// We store the arguments in a temporary array, so that we can easily protect them
 	int argument_count = 0;
-	for (int i = first_argument_index; i < eif_dscoop_message_argument_count(message); i++) {
+	for (int i = first_argument_index; !error && i < eif_dscoop_message_argument_count(message); i++) {
 		if (eif_dscoop_message_get_argument_type (message, i) != A_NODE) {
 			argument_count++;
+			arguments[argument_count].type = SK_INVALID;
+			arguments[argument_count] = eif_dscoop_message_get_value_argument(message, i);
+			if (arguments[argument_count].type == SK_REF) {
+				RT_GC_PROTECT (arguments[argument_count].item.r);
+				refvars++;
+			} else if (arguments[argument_count].type == SK_INVALID) {
+				error = 1;
+			}
 		} else {
 			char* address;
 			EIF_NATURAL_16 port = 0;
@@ -984,127 +1011,119 @@ void eif_dscoop_add_call_from_message (struct rt_processor* self, struct eif_dsc
 		}
 	}
 	
-	call_data* cd = 0;
-	struct rt_private_queue* pq = 0;
-	EIF_TYPED_VALUE result = { 0 };
-	result.type = SK_INVALID;
-	result.item.r = NULL;
+	//Find the correct routine
+	EIF_TYPED_VALUE result = {0};
 	if (!error) {
-		EIF_TYPE context_type = eif_type_id2 (cname);
-		EIF_REFERENCE target = rt_dscoop_exported_object (self->connection->remote_nid, target_id);
-		if (context_type.id == INVALID_DTYPE || !target) {
-			error = T_INVALID_ARGUMENT;
-		} else {
-			cd = eif_dscoop_create_scoop_call(target, context_type.id, rname, argument_count);
-			if (!cd) {
-				error = 1;
-			}
-		}
-	}
-	
-	if (!error && expects_synchronization)
-		cd->is_synchronous = EIF_TRUE;
-	
-	unsigned refvars = 0;
-	if (!error) {
-		RT_GC_PROTECT (cd->target);
-		refvars++; // Accounting for the target in the call data struct
-		
-		for (EIF_NATURAL_8 i = 0; i < argument_count; i++) {
-			EIF_TYPED_VALUE val = eif_dscoop_message_get_value_argument(message, first_argument_index + i);
-			// TODO: Check val for conformity
-			eif_dscoop_set_call_data_argument (cd, val, i);
-			if (val.type == SK_REF) {
-				RT_GC_PROTECT (cd -> argument[i].item.r);
-				refvars++;
-			}
-		}
-
-		struct eif_define def = eif_find_feature (rname, eif_type_by_reference (cd->target), 0);
+		struct eif_define def = eif_find_feature (rname, eif_type_by_reference (arguments[0].item.r), 0);
 		EIF_TYPE_ID rtype = def.signature->result_type;
 		if (rtype != INVALID_DTYPE) {
-			cd->is_synchronous = EIF_TRUE;
 			result.type = eif_dtype_to_sk_type (rtype);
-			#ifndef WORKBENCH
-			switch (result.type) {
-				case SK_INT8:
-					cd -> result = &result.item.i1;
-				break;
-				case SK_INT16:
-					cd -> result = &result.item.i2;
-				break;
-				case SK_INT32:
-					cd -> result = &result.item.i4;
-				break;
-				case SK_INT64:
-					cd -> result = &result.item.i8;
-				break;
-				case SK_UINT8:
-					cd -> result = &result.item.n1;
-				break;
-				case SK_UINT16:
-					cd -> result = &result.item.n2;
-				break;
-				case SK_UINT32:
-					cd -> result = &result.item.n4;
-				break;
-				case SK_UINT64:
-					cd -> result = &result.item.n8;
-				break;
-				case SK_REAL32:
-					cd -> result = &result.item.r4;
-				break;
-				case SK_REAL64:
-					cd -> result = &result.item.r8;
-				break;
-				case SK_CHAR8:
-					cd -> result = &result.item.c1;
-				break;
-				case SK_CHAR32:
-					cd -> result = &result.item.c4;
-				break;
-				case SK_POINTER:
-					cd -> result = &result.item.p;
-				break;
-				case SK_BOOL:
-					cd -> result = &result.item.b;
-					break;
-				default:
-					result.type = SK_REF;
-					cd -> result = &result.item.r;
-				break;
+			if (result.type == SK_REF) {
+				result.item.r = NULL;
+				RT_GC_PROTECT (result.item.r);
+				refvars++;
 			}
-			#else
-				cd -> result = &result;
-			#endif
+		} else {
+			result.type = SK_INVALID;
 		}
-
-		// TODO: Check that queue is locked
-		error = rt_queue_cache_retrieve (&self->cache, rt_get_processor (RTS_PID(cd->target)), &pq);
 	}
 
+	// Building of the call data struct
+	call_data* cd = NULL;
 	if (!error) {
-		error = !rt_private_queue_is_locked (pq);
-	}
-
-	if (refvars) {
-		RT_GC_WEAN_N (refvars); //Unprotect all protected variables
-		refvars = 0;
-	}
-	if (!error) {
-		pq->client = self;
-		if (cd->is_synchronous && result.type == SK_REF) {
-			RT_GC_PROTECT (result.item.r);
-			refvars = 1;
-		}
-		rt_private_queue_log_call(pq, self, cd);
-	}
-	if (!error) {
-		if (result.type == SK_REF) {
-			if (result.item.r == NULL) {
-				result.type = SK_VOID;
+		EIF_TYPE context_type = eif_type_id2 (cname);
+		if (context_type.id == INVALID_DTYPE || !arguments[0].item.r) {
+			error = T_INVALID_ARGUMENT;
+		} else {
+			cd = eif_dscoop_create_scoop_call(arguments[0].item.r, context_type.id, rname, argument_count);
+			if (!cd) {
+				error = 1;
+			} else {
+				for (int i = 0; i < argument_count; i++) {
+					eif_dscoop_set_call_data_argument (cd, arguments[i+1], i);
+				}
+			}
+			
+			if (expects_result) {
+				if (result.type != SK_INVALID) {
+					#ifndef WORKBENCH
+					switch (result.type) {
+						case SK_INT8:
+							cd -> result = &result.item.i1;
+						break;
+						case SK_INT16:
+							cd -> result = &result.item.i2;
+						break;
+						case SK_INT32:
+							cd -> result = &result.item.i4;
+						break;
+						case SK_INT64:
+							cd -> result = &result.item.i8;
+						break;
+						case SK_UINT8:
+							cd -> result = &result.item.n1;
+						break;
+						case SK_UINT16:
+							cd -> result = &result.item.n2;
+						break;
+						case SK_UINT32:
+							cd -> result = &result.item.n4;
+						break;
+						case SK_UINT64:
+							cd -> result = &result.item.n8;
+						break;
+						case SK_REAL32:
+							cd -> result = &result.item.r4;
+						break;
+						case SK_REAL64:
+							cd -> result = &result.item.r8;
+						break;
+						case SK_CHAR8:
+							cd -> result = &result.item.c1;
+						break;
+						case SK_CHAR32:
+							cd -> result = &result.item.c4;
+						break;
+						case SK_POINTER:
+							cd -> result = &result.item.p;
+						break;
+						case SK_BOOL:
+							cd -> result = &result.item.b;
+							break;
+						case SK_INVALID:
+							cd -> result = NULL;
+							break;
+						default:
+							result.type = SK_REF;
+							cd -> result = &result.item.r;
+						break;
+					}
+					#else
+						cd -> result = &result;
+					#endif
+				} else {
+					// We expect a result, but this is a procedure!
+					error = 1;
+				}
+			} else {
+				if (result.type != SK_INVALID) {
+					// This is a function, but the client does not care about 
+					// the result
+					cd -> result = &rt_dscoop_scratch_result;
+				} else {
+					// We do not expect a result, and it is a procedure
+					cd -> result = NULL;
+				}				
 			}
 		}
+	}
+	
+	// Finally, making the call
+	if (!error) {
+		cd->is_synchronous = expects_synchronization;
+		eif_scoop_log_call (self->pid, self->pid, cd);
+		
+		// Returning the result, if needed
 		if (expects_result) {
 			struct eif_dscoop_connection* result_connection = NULL;
 			EIF_NATURAL_64 nid = 0;
@@ -1158,6 +1177,9 @@ void eif_dscoop_add_call_from_message (struct rt_processor* self, struct eif_dsc
 	if (refvars) {
 		RT_GC_WEAN_N (refvars);
 	}
+	result.type = SK_INVALID;
+	result.item.r = NULL;
+	free (arguments);
 	free (message);
 }
 
@@ -1310,7 +1332,7 @@ rt_public EIF_REFERENCE eif_dscoop_get_remote_index (EIF_NATURAL_64 remote_nid)
 		return NULL;
 }
 
-rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, struct eif_dscoop_connection* connection)
+EIF_BOOLEAN rt_dscoop_message_handle_one (struct rt_processor* self, struct eif_dscoop_connection* connection)
 {
 	EIF_GET_CONTEXT
 	
@@ -1341,8 +1363,7 @@ rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, 
 		}
 		eif_pthread_mutex_unlock (proxyproc_mutex);
 
-		//Then we revert all of their transactions
-		//TODO: Maybe we should do all reverts at once, and not one after another?
+		//Then we instruct them to revert their transactions
 		for (size_t i = 0; i < eif_pid_list_count (&list); i++) {
 			struct rt_processor* proc = rt_get_processor (eif_pid_list_item (&list, i));
 			if (proc && proc->connection && proc->connection->remote_nid == connection->remote_nid) {
@@ -1351,7 +1372,7 @@ rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, 
 		}
 		eif_pid_list_deinit (&list);
 		
-		return T_UNKNOWN_ERROR;
+		return EIF_FALSE;
 	}
 		
 	switch (eif_dscoop_message_subject (message)) {
@@ -1569,7 +1590,7 @@ rt_public EIF_INTEGER eif_dscoop_message_handle_one (struct rt_processor* self, 
 			free (message);
 	}
 	
-	return 0;
+	return EIF_TRUE;
 }
 
 int eif_dscoop_compensation_compare (struct eif_dscoop_compensation* c1, struct eif_dscoop_compensation* c2) {
@@ -1671,10 +1692,11 @@ rt_public void eif_builtin_DSCOOP_PROXY_OBJECT_send_release (EIF_REFERENCE self)
 	eif_dscoop_send_release (self);
 }
 
-rt_public EIF_INTEGER eif_builtin_DSCOOP_POSTMAN_process_message_c (EIF_REFERENCE self, EIF_POINTER connection) 
+rt_public void eif_builtin_DSCOOP_POSTMAN_process_messages_c (EIF_REFERENCE self, EIF_POINTER connection) 
 {
-	int error = eif_dscoop_message_handle_one (rt_get_processor (RTS_PID(self)), connection);
-	return error;
+	while (rt_dscoop_message_handle_one (rt_get_processor (RTS_PID(self)), connection)) {
+		plsc();
+	}
 }
 
 rt_public void eif_builtin_DSCOOP_COMPENSATION_SUPPORT_register_compensation(EIF_REFERENCE current, EIF_REFERENCE agent) 

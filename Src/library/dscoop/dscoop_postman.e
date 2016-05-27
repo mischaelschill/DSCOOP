@@ -27,13 +27,7 @@ feature
 			error: INTEGER
 			ee: EXECUTION_ENVIRONMENT
 		do
-			from
-				error := 0
-			until
-				error /= 0
-			loop
-				error := process_message_c (connection_c)
-			end
+			process_messages_c (connection_c)
 			separate connection as c_connection do
 				deregister_connection_c (c_connection.remote_id)
 			end
@@ -45,8 +39,8 @@ feature {NONE} -- Internals
 	connection_c: POINTER
 		-- The internal connection structure
 
-	process_message_c (a_connection: POINTER): INTEGER
-			-- Processes as single messae, returning 0 on success
+	process_messages_c (a_connection: POINTER)
+			-- Processes messages until connection is closed
 		external
 			"built_in"
 		end

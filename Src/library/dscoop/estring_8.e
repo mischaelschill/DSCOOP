@@ -14,12 +14,13 @@ inherit
 			item as area_item,
 			count as area_count,
 			merge as area_merge
+		export {NONE}
+			copy
 		undefine
 			out,
 			is_equal
 		redefine
-			default_create,
-			copy
+			default_create
 		end
 
 	READABLE_STRING_GENERAL
@@ -33,22 +34,21 @@ inherit
 		redefine
 			valid_index,
 			starts_with,
-			is_equal,
 			default_create,
 			is_immutable,
 			out,
 			to_string_32,
-			to_string_8,
-			copy
+			to_string_8
 		end
 
 	READABLE_INDEXABLE[CHARACTER_8]
+		export {NONE}
+			copy
 		undefine
 			is_equal
 		redefine
 			default_create,
-			out,
-			copy
+			out
 		end
 
 create
@@ -124,6 +124,7 @@ feature {NONE} -- Initialization
 				l_string.put_character (a_string[i].to_character_8, i - 1)
 				i := i + 1
 			end
+			l_string.put_integer_8 (0, a_string.count);
 
 			copy_from_pointer (l_string.item, l_string.count)
 		end
@@ -268,8 +269,6 @@ feature {NONE} -- Initialization
 				l_buffer.put_natural_8 (0, k)
 				check k = l_buffer.count - 1 end
 				copy_from_pointer (l_buffer.item, l_buffer.count)
-			else
-				make_empty
 			end
 		end
 
@@ -438,45 +437,23 @@ feature -- Comparison
 		local
 			i: INTEGER
 		do
-			if not is_equal (a_other) then
-				from
-					i := 1
-				until
-					i > count or else i > a_other.count or else
-						item (i) /= a_other.item (i)
-				loop
-					i := i + 1
-				end
-
-				if i > count and i > a_other.count then
-					check count = a_other.count end
-					Result := False
-				elseif i > count then
-					Result := True
-				elseif i > a_other.count then
-					Result := False
-				else
-					Result := item (i) < a_other.item (i)
-				end
+			from
+				i := 1
+			until
+				i > count or else i > a_other.count or else
+					item (i) /= a_other.item (i)
+			loop
+				i := i + 1
 			end
-		end
 
-	is_equal (a_other: like Current): BOOLEAN
-		local
-			i: INTEGER
-		do
-			if count = a_other.count then
-				from
-					i := 1
-				until
-					i > count or else item (i) /= a_other.item (i)
-				loop
-					i := i + 1
-				end
-
-				if i > count then
-					Result := True
-				end
+			if i > count and i > a_other.count then
+				Result := False
+			elseif i > count then
+				Result := True
+			elseif i > a_other.count then
+				Result := False
+			else
+				Result := item (i) < a_other.item (i)
 			end
 		end
 
@@ -680,14 +657,6 @@ feature -- Duplication
 			-- between `start_index' and `end_index'
 		do
 			create Result.make_substring(Current, start_index.max (1), end_index.min (count))
-		end
-
-feature {NONE}
-	copy (other: like Current)
-		do
-			area_item := other.area_item
-			area_count := other.area_count
-			anchor := other.anchor
 		end
 
 feature {ESTRING_8} -- Implementation
