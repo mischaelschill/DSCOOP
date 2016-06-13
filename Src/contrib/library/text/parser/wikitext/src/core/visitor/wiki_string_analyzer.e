@@ -170,18 +170,76 @@ feature -- Processing
 					end
 					s.extend (c)
 				when '`' then
-					if
-						safe_character (a_text, i + 1) = '`' and then
-						safe_character (a_text, i + 2) = '`'
-					then
-							-- Support ```lang%N....%N```
-						p := a_text.substring_index ("```", i + 3)
+					if safe_character (a_text, i + 1) = '`' then
+						if
+							safe_character (a_text, i + 2) = '`'
+						then
+								-- Support ```lang%N....%N```
+							p := a_text.substring_index ("```", i + 3)
+							if p > 0 then
+								r := p + 2
+
+								flush_buffer (a_parts, s)
+								if in_items.is_empty then
+									create {WIKI_CODE} w_item.make_from_3backticks_source (a_text.substring (i, p + 2))
+									a_parts.add_element (w_item)
+									w_item.process (Current) -- Check recursion...
+									w_item := Void
+									create s.make_empty
+								else
+									s.append (a_text.substring (i, r))
+								end
+								i := r
+							else
+								s.extend (c)
+							end
+						else
+								-- Support ``...``, usually to escape backtick ` such as in `` `foo' ``
+							p := a_text.substring_index ("``", i + 2)
+							if p > 0 then
+									-- Only for inline code, without any new line
+								q := a_text.index_of ('%N', i + 2)
+								if q <= p then
+									q := 0
+								end
+							else
+								q := 0
+							end
+							if p > 0 and then q = 0 then --| q = 0 means no new line between the two double backtik ``..``
+								r := p + 1
+
+								flush_buffer (a_parts, s)
+								if in_items.is_empty then
+									create {WIKI_CODE} w_item.make_from_double_backtick_source (a_text.substring (i, p + 1))
+									a_parts.add_element (w_item)
+									w_item.process (Current) -- Check recursion...
+									w_item := Void
+									create s.make_empty
+								else
+									s.append (a_text.substring (i, r))
+								end
+								i := r
+							else
+								s.extend (c)
+							end
+						end
+					else
+						p := a_text.substring_index ("`", i + 1)
 						if p > 0 then
-							r := p + 3
+								-- Only for inline code, without any new line
+							q := a_text.index_of ('%N', i + 1)
+							if q <= p then
+								q := 0
+							end
+						else
+							q := 0
+						end
+						if p > 0 and then q = 0 then --| q = 0 means no new line between the two single backtik `..`
+							r := p
 
 							flush_buffer (a_parts, s)
 							if in_items.is_empty then
-								create {WIKI_CODE} w_item.make_from_3backticks_source (a_text.substring (i, p + 2))
+								create {WIKI_CODE} w_item.make_from_single_backtick_source (a_text.substring (i, p))
 								a_parts.add_element (w_item)
 								w_item.process (Current) -- Check recursion...
 								w_item := Void
@@ -193,8 +251,6 @@ feature -- Processing
 						else
 							s.extend (c)
 						end
-					else
-						s.extend (c)
 					end
 				when '<' then
 					if

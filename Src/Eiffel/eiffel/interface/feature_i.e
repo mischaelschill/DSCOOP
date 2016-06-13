@@ -2051,10 +2051,10 @@ feature -- Polymorphism
 
 feature -- Signature instantiation
 
-	instantiated (a_parent_type: TYPE_A): FEATURE_I
-			-- Instantiated signature in context of `a_parent_type'.
+	instantiated (parent_type: TYPE_A): FEATURE_I
+			-- Instantiated signature in context of `parent_type'.
 		require
-			good_argument: a_parent_type /= Void
+			good_argument: parent_type /= Void
 		local
 			i, nb: INTEGER
 			old_type, new_type: TYPE_A
@@ -2063,7 +2063,7 @@ feature -- Signature instantiation
 			Result := Current
 				-- Instantiation of the type
 			old_type := type
-			new_type := old_type.instantiated_in (a_parent_type)
+			new_type := old_type.instantiated_in (parent_type)
 			if new_type /= old_type then
 				Result := twin
 				Result.set_type (new_type, assigner_name_id)
@@ -2080,7 +2080,7 @@ feature -- Signature instantiation
 				i > nb
 			loop
 				old_type := l_arguments.i_th (i)
-				new_type := old_type.instantiated_in (a_parent_type)
+				new_type := old_type.instantiated_in (parent_type)
 				if old_type /= new_type then
 					if Result.arguments = arguments then
 						if Result = Current then

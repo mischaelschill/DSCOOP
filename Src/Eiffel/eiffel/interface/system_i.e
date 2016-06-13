@@ -90,6 +90,13 @@ feature {NONE} -- Initialization
 				-- Use names heap created from parser library.
 			names := Workbench.names_heap
 
+				-- Set up working environment to use current as SYSTEM_I instance.
+			Workbench.set_system (Current)
+
+
+				-- Creation of all the servers.
+			server_make
+
 				-- Creation of the system hash table
 			create class_types.make (1, System_chunk)
 			create new_classes.make
@@ -147,13 +154,6 @@ feature {NONE} -- Initialization
 
 				-- Create test system
 			create test_system
-
-				-- Set up working environment to use current as SYSTEM_I instance.
-			Workbench.set_system (Current)
-
-				-- Creation of all the servers.
-			server_make
-
 		end
 
 feature -- Counters

@@ -90,6 +90,29 @@ endlocal
 		<local name="set_version_fn" value="${cwd}/tmp_b_set_version.sh" />
 		<echo to_file="${set_version_fn}" append="false" >
 #!/bin/sh
+<<<<<<< HEAD
+=======
+
+# set version number in $2 to the latest SVN repository version number.
+# $1 = SVN repository
+# $2 = file to process if any, otherwise display version on output
+
+LC_MESSAGES=C
+
+computed_svn_revision=`until svn info $1; do echo &quot;&quot;; done | grep &quot;Last Changed Rev&quot; | sed -e &quot;s/Last Changed Rev: //&quot;`
+if test "$computed_svn_revision" = "" ; then
+	echo bad
+	computed_svn_revision='0000 -- Script was unable to set this value'
+fi
+if test "$2" = "" ; then
+	echo $computed_svn_revision
+else
+	echo Set version: LASTREV=$computed_svn_revision
+	svn revert $2 #revert in case it was modification
+	sed -e "s/:= 0000/:= $computed_svn_revision/" $2 &gt; tmp
+	mv tmp $2
+fi
+>>>>>>> e410c41eb12074d811e4063b1808f7899551ad15
 		</echo>
 		<exec executable="/bin/sh ${set_version_fn} ${EIFFEL_SRC} ${A_filename}" dir="${A_dir}" 
 			accept_errors="true" />

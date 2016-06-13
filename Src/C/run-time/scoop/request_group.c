@@ -196,7 +196,6 @@ rt_shared int rt_request_group_wait (struct rt_request_group* self)
 doc:	<routine name="rt_request_group_lock" return_type="void" export="shared">
 doc:		<summary> Lock all processors in the request group. </summary>
 doc:		<param name="self" type="struct rt_request_group*"> The request group struct. Must not be NULL. </param>
-doc:		<param name="is_waiting" type="EIF_BOOLEAN"> Whether this lock is after a wait condition. </param>
 doc:		<thread_safety> Not safe. </thread_safety>
 doc:		<synchronization> None. </synchronization>
 doc:	</routine>

@@ -403,7 +403,11 @@
 		<mkdir directory="studio/spec/$ISE_PLATFORM/include" dir="${a_dir}" />
 		<mkdir directory="studio/spec/$ISE_PLATFORM/lib" dir="${a_dir}" />
 		<copy dir="${EIFFEL_SRC}/C/run-time" to_directory="${a_dir}/studio/spec/${ISE_PLATFORM}/include"  >
+<<<<<<< HEAD
 			<fileset include="@(*.h|*.decl|*.interface)" />
+=======
+			<fileset include="@(*.h)" />
+>>>>>>> e410c41eb12074d811e4063b1808f7899551ad15
 		</copy>
 
 		<!-- at this point, the runtime should already be compiled -->
@@ -985,7 +989,10 @@
 			<geant target="clean_folder" arguments="carbon" dir="$a_target_dir/library/vision2/implementation" />
 			<geant target="copy_library_to" arguments="vision2_extension,${a_target_dir}" />
 			<geant target="copy_library_to" arguments="web,${a_target_dir}" />
+<<<<<<< HEAD
 			<geant target="copy_library_to" arguments="dscoop,${a_target_dir}" />
+=======
+>>>>>>> e410c41eb12074d811e4063b1808f7899551ad15
 		</group>
 
 		<!-- ############################################################ -->
