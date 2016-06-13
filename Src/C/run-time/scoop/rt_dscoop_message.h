@@ -62,7 +62,7 @@ enum eif_dscoop_message_arg_type
 	// References
 	A_REF = 151,
 	// Other Values (serialized objects)
-	A_VAL = 152,
+	A_OBJ = 152,
 	// Custom serialized object
 	A_CUSTOM = 153,
 	// Agents
@@ -96,11 +96,11 @@ void eif_dscoop_message_init (struct eif_dscoop_message * message, enum eif_dsco
 
 void eif_dscoop_message_dispose (struct eif_dscoop_message * message);
 
-int eif_dscoop_message_add_value_argument (struct eif_dscoop_message * message, EIF_TYPED_VALUE* arg, EIF_NATURAL_64 client_nid);
+int eif_dscoop_message_add_value_argument (struct eif_dscoop_message * message, EIF_TYPED_VALUE* arg);
 
 int eif_dscoop_message_add_natural_argument (struct eif_dscoop_message * message, EIF_NATURAL_64 arg);
 
-int eif_dscoop_message_add_identifier_argument (struct eif_dscoop_message * message, char * identifier);
+int eif_dscoop_message_add_identifier_argument (struct eif_dscoop_message * message, const char * identifier);
 
 ssize_t eif_dscoop_message_parse (struct eif_dscoop_message * message, const char * content);
 

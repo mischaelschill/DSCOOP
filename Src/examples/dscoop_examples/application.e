@@ -21,11 +21,7 @@ feature {NONE} -- Initialization
 			i: INTEGER
 			l_string_list: ARRAYED_LIST[ESTRING_8]
 		do
-			--create l_gc
-			-- Because of some strange bug we need to disable the gc.
-			-- The bug seems to be unrelated to dscoop, but somehow triggered.
-			-- separate l_gc.disabler as d do d.disable_gc end
-			--enable_debug
+			-- enable_debug
 
 			if Current.argument_count > 0 then
 				l_found := False

@@ -93,6 +93,8 @@ extern "C" {
 
 #define T_INVALID_ANNOTATIONS					0x201L
 
+#define T_NOT_CONFORMING						0x301L
+	
 /* As a special case, an I/O error is raised when a system call which is
  * I/O bound fails.
  * Obsolete: use `eraise (NULL, EN_IO)' instead

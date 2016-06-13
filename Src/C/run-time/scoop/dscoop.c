@@ -249,7 +249,7 @@ rt_public void eif_dscoop_log_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID
 	unsigned foreign_references_count = 0;
 	
 	for (unsigned i = 0; i < data->count; i++) {
-		eif_dscoop_message_add_value_argument (&message, &data->argument[i], supplier->remote_pid);
+		eif_dscoop_message_add_value_argument (&message, &data->argument[i]);
 		if (data->argument[i].item.r && data->argument[i].type == SK_REF && Dtype(data->argument[i].item.r) == eif_get_eif_dscoop_proxy_dtype()) {
 			EIF_NATURAL_64 nid = eif_dscoop_nid_of_proxy (data->argument[i].item.r);
 			if (nid != eif_dscoop_node_id () && nid != supplier->connection->remote_nid) {
@@ -1158,7 +1158,7 @@ void eif_dscoop_add_call_from_message (struct rt_processor* self, struct eif_dsc
 			}
 			if (!error) {
 				eif_dscoop_message_reply (message, S_OK);
-				eif_dscoop_message_add_value_argument (message, &result, self->connection->remote_nid);
+				eif_dscoop_message_add_value_argument (message, &result);
 				if (result_connection && result_connection->node_address) {
 					eif_dscoop_message_add_node_argument (message, nid, result_connection->node_address, result_connection->node_port);
 				}
@@ -1397,7 +1397,7 @@ EIF_BOOLEAN rt_dscoop_message_handle_one (struct rt_processor* self, struct eif_
 				v.type = SK_REF;
 				v.item.r = connection->index_object_ref;
 				RT_GC_PROTECT (v.item.r);
-				eif_dscoop_message_add_value_argument (message, &v, connection->remote_nid);
+				eif_dscoop_message_add_value_argument (message, &v);
 				RT_GC_WEAN (v.item.r);
 			} else {
 				eif_dscoop_message_reply (message, S_FAIL);
@@ -1484,6 +1484,7 @@ EIF_BOOLEAN rt_dscoop_message_handle_one (struct rt_processor* self, struct eif_
 				}
 			} else {
 				eif_dscoop_message_reply (message, S_FAIL);
+				eif_dscoop_message_send (message);
 				eif_dscoop_message_dispose (message);
 				free (message);
 			}
@@ -1507,6 +1508,7 @@ EIF_BOOLEAN rt_dscoop_message_handle_one (struct rt_processor* self, struct eif_
 				}
 			} else {
 				eif_dscoop_message_reply (message, S_FAIL);
+				eif_dscoop_message_send (message);
 				eif_dscoop_message_dispose (message);
 				free (message);
 			}
@@ -1530,6 +1532,7 @@ EIF_BOOLEAN rt_dscoop_message_handle_one (struct rt_processor* self, struct eif_
 				}
 			} else {
 				eif_dscoop_message_reply (message, S_FAIL);
+				eif_dscoop_message_send (message);
 				eif_dscoop_message_dispose (message);
 				free (message);
 			}
@@ -1553,6 +1556,7 @@ EIF_BOOLEAN rt_dscoop_message_handle_one (struct rt_processor* self, struct eif_
 				}
 			} else {
 				eif_dscoop_message_reply (message, S_FAIL);
+				eif_dscoop_message_send (message);
 				eif_dscoop_message_dispose (message);
 				free (message);
 			}
@@ -1695,7 +1699,6 @@ rt_public void eif_builtin_DSCOOP_PROXY_OBJECT_send_release (EIF_REFERENCE self)
 rt_public void eif_builtin_DSCOOP_POSTMAN_process_messages_c (EIF_REFERENCE self, EIF_POINTER connection) 
 {
 	while (rt_dscoop_message_handle_one (rt_get_processor (RTS_PID(self)), connection)) {
-		plsc();
 	}
 }
 
@@ -1772,8 +1775,9 @@ void rt_dscoop_deregister_proxy_processor (EIF_DSCOOP_NID nid, EIF_DSCOOP_PID pi
 				eif_dscoop_proxy_table_iterator_key (&it).pid == pid)) {
 			eif_wean (eif_dscoop_proxy_table_iterator_item (&it));
 			eif_dscoop_proxy_table_iterator_remove (&it);
+		} else {
+			eif_dscoop_proxy_table_iterator_forth (&it);
 		}
-		eif_dscoop_proxy_table_iterator_forth (&it);
 	}
 	eif_pthread_mutex_unlock (proxyobj_mutex);
 }
@@ -1811,8 +1815,8 @@ void rt_dscoop_update_weak_references () {
 
 			if (!removed) {
 				object_oid_table_need_rehash = object_oid_table_need_rehash || before != *object;
+				eif_dscoop_object_oid_table_iterator_forth(&it);
 			}
-			eif_dscoop_object_oid_table_iterator_forth(&it);
 		}
 	}
 }

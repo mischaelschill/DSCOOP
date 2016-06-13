@@ -41,7 +41,6 @@
 			<visible class="BUFFER"/>
 			<visible class="LOG_FILE"/>
 			<visible class="LOGGER"/>
-			<visible class="SEI_EXAMPLE_SUPPLIER"/>
 			<visible class="PIPELINE_STAGE"/>
 			<visible class="POLITICIAN"/>
 		</cluster>

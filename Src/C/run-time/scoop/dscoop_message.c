@@ -10,6 +10,9 @@
 #include <sys/param.h>
 #include "rt_gen_types.h"
 #include "rt_dscoop_message.h"
+#include "rt_struct.h"
+#include "rt_cecil.h"
+#include "rt_macros.h"
 
 const char BOOLEAN_type_name[] = "BOOLEAN";
 const char INTEGER_8_type_name[] = "INTEGER_8";
@@ -49,6 +52,11 @@ struct eif_dscoop_message_header
 
 
 #define DSCOOP_MESSAGE_HEADER_SIZE sizeof(struct eif_dscoop_message_header)
+
+static inline EIF_BOOLEAN is_string_safe(struct eif_dscoop_message* msg, char * str) {
+	EIF_NATURAL_64 maxlen = msg->length - (EIF_NATURAL_64)((size_t)str - (size_t)msg->data.raw);
+	return strnlen (str, maxlen) < maxlen;
+}
 
 size_t str32len(const EIF_NATURAL_32 string[]) {
 	size_t result = 0;
@@ -190,6 +198,13 @@ struct eif_dscoop_message_agent_arg
 	EIF_NATURAL_32 arguments_count;
 	char class_feature_name[1];
 };
+
+struct rt_dscoop_message_object_arg
+{
+	EIF_NATURAL_8 type;
+	EIF_NATURAL_16 field_count;
+	char class_name[1];
+};
 #pragma pack(pop)
 
 int eif_dscoop_message_add_node_argument (struct eif_dscoop_message *msg, EIF_NATURAL_64 nid, char *address, EIF_NATURAL_16 port)
@@ -216,7 +231,7 @@ int eif_dscoop_message_add_node_argument (struct eif_dscoop_message *msg, EIF_NA
 	return T_OK;
 }
 
-int eif_dscoop_message_add_identifier_argument (struct eif_dscoop_message *msg, char * ident)
+int eif_dscoop_message_add_identifier_argument (struct eif_dscoop_message *msg, const char * ident)
 {
 	REQUIRE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
 	EIF_NATURAL_64 required_space = sizeof (struct eif_dscoop_message_str8_arg) + strlen (ident);
@@ -259,7 +274,336 @@ int eif_dscoop_message_add_natural_argument (struct eif_dscoop_message *msg, EIF
 	return T_OK;
 }
 
-int eif_dscoop_message_add_ref_arg (struct eif_dscoop_message *msg, EIF_REFERENCE* ref)
+size_t rt_dscoop_message_reference_space (EIF_OBJECT ref)
+{
+	char* reftype = *ref ? eif_typename (eif_new_type (Dftype (*ref), ATTACHED_FLAG)) + 1
+			: "NONE";
+
+	return sizeof (struct eif_dscoop_message_ref_arg) + strlen (reftype);
+}
+
+size_t rt_dscoop_message_object_space (EIF_OBJECT ref)
+{
+	char* reftype = *ref ? eif_typename (eif_new_type (Dftype (*ref), ATTACHED_FLAG)) + 1
+			: "NONE";
+
+	return sizeof (struct rt_dscoop_message_object_arg) + strlen (reftype);
+}
+
+size_t rt_dscoop_message_extend_value_internal 
+		(struct eif_dscoop_message* message, EIF_TYPED_VALUE* arg);
+
+size_t rt_dscoop_message_extend_object (struct eif_dscoop_message *msg, EIF_OBJECT obj)
+{
+	REQUIRE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
+	
+	EIF_ENCODED_TYPE dftype = Dftype (eif_access (obj));
+	EIF_TYPE type = eif_decoded_type (dftype);
+
+	char* reftype = eif_access (obj) ? eif_typename (eif_new_type (dftype, ATTACHED_FLAG)) + 1
+			: "NONE";
+
+	EIF_NATURAL_64 required_space = sizeof (struct rt_dscoop_message_object_arg) + strlen (reftype);
+
+	if (eif_dscoop_message_accommodate (msg, required_space)) {
+		return 0;
+	}
+
+	struct rt_dscoop_message_object_arg* arg =
+			(struct rt_dscoop_message_object_arg*) (msg->data.raw + msg->length);
+	arg->type = (EIF_NATURAL_8) A_OBJ;
+
+	strcpy (arg->class_name, reftype);
+	
+	arg->field_count = ei_count_field_of_type (dftype);
+	
+	for (EIF_NATURAL_16 i = 0; i < arg->field_count; i++) {
+		eif_dscoop_message_add_identifier_argument (msg, ei_field_name_of_type (i, dftype));
+		EIF_TYPED_VALUE typed_val;
+		EIF_TYPE field_type = eif_decoded_type (System(To_dtype(type.id)).cn_types[i]);
+		typed_val.type = eif_dtype_to_sk_type (To_dtype(field_type.id));
+		switch (typed_val.type) {
+			case SK_REF: 
+				{
+					EIF_REFERENCE ref = ei_reference_field (i, eif_access (obj));
+					typed_val.item.r = ref;
+					if (EIF_IS_EXPANDED_TYPE(System(eif_decoded_type (Dftype (ref)).id))) {
+						typed_val.type = SK_EXP;
+					} else if (!RT_CONF_IS_SEPARATE_FLAG(field_type.annotations)) {
+						// A reference object attached to a non-separate field.
+						// TODO: Set this to SK_EXP to export the object transparently
+						typed_val.type = SK_VOID;
+						typed_val.item.r = NULL;
+					}
+				}
+				break;
+			case SK_CHAR8: 
+				typed_val.item.c1 = ei_char_field (i, eif_access (obj));
+				break;
+			case SK_CHAR32: 
+				typed_val.item.c4 = ei_char_32_field (i, eif_access (obj));
+				break;
+			case SK_BOOL: 
+				typed_val.item.b = ei_bool_field (i, eif_access (obj));
+				break;
+			case SK_UINT8: 
+				typed_val.item.n1 = ei_uint_8_field (i, eif_access (obj));
+				break;
+			case SK_UINT16: 
+				typed_val.item.n2 = ei_uint_16_field (i, eif_access (obj));
+				break;
+			case SK_UINT32: 
+				typed_val.item.n4 = ei_uint_32_field (i, eif_access (obj));
+				break;
+			case SK_UINT64: 
+				typed_val.item.n8 = ei_uint_64_field (i, eif_access (obj));
+				break;
+			case SK_INT8: 
+				typed_val.item.i1 = ei_int_8_field (i, eif_access (obj));
+				break;
+			case SK_INT16: 
+				typed_val.item.i2 = ei_int_16_field (i, eif_access (obj));
+				break;
+			case SK_INT32: 
+				typed_val.item.i4 = ei_int_32_field (i, eif_access (obj));
+				break;
+			case SK_INT64: 
+				typed_val.item.i8 = ei_int_64_field (i, eif_access (obj));
+				break;
+			case SK_REAL32: 
+				typed_val.item.r4 = ei_float_field (i, eif_access (obj));
+				break;
+			case SK_REAL64: 
+				typed_val.item.r8 = ei_double_field (i, eif_access (obj));
+				break;
+			case SK_EXP: 
+				typed_val.item.r = ei_oref(i, eif_access (obj));
+				break;
+			case SK_POINTER: 
+				typed_val.item.p = ei_ptr_field (i, eif_access (obj));
+				break;
+		}
+		
+		rt_dscoop_message_extend_value_internal (msg, &typed_val);
+	}
+	
+	ENSURE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));	
+	return required_space;
+}
+
+static inline long ei_field_with_name (const char *name, EIF_ENCODED_TYPE enctype) 
+{
+	long n = ei_count_field_of_type (enctype);
+	for (long i = 0; i < n; i++) {
+		if (!strcmp (name, ei_field_name_of_type (i, enctype))) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static struct eif_dscoop_message_str8_arg* rt_dscoop_message_read_identifier (struct eif_dscoop_message *msg, size_t offset) {
+	ssize_t maxlen = msg->length - offset - sizeof (struct eif_dscoop_message_str8_arg) + 1;
+	if (maxlen <= 0) {
+		return NULL;
+	}
+	struct eif_dscoop_message_str8_arg* result =
+			(struct eif_dscoop_message_str8_arg*) (msg->data.raw + offset);
+	if (result->type != A_IDENT) {
+		return NULL;
+	}
+	if (strnlen (result->data, (size_t) maxlen) == (size_t) maxlen) {
+		return NULL;
+	}
+	return result;
+}
+
+// Sets a field if possible. May cause garbage collection!!!
+static int smart_set_field (EIF_REFERENCE ref, long field, EIF_TYPED_VALUE value)
+{
+	EIF_NATURAL_32 field_type = ei_field_type_of_type (field, Dftype(ref));
+	EIF_TYPE full_field_type;
+	full_field_type.annotations = System(Dftype(ref)).cn_attr_flags[field];
+	full_field_type.id = field_type & SK_DTYPE;
+	
+	EIF_TYPE value_type;
+	if ((value.type & SK_SIMPLE) == SK_SIMPLE) {
+		value_type.id = eif_sk_type_to_dtype (value.type);
+		value_type.annotations = ATTACHED_FLAG;
+	} else {
+		value_type = eif_decoded_type (Dftype (value.item.r));
+	}	
+	
+	if (eif_gen_conf2 (value_type, full_field_type)) {
+		if ((value.type & SK_REF) == SK_REF) {
+			// The value is a reference
+			if (SK_REF == (field_type & SK_REF)) {
+				//Both are references, that's easy
+				ei_set_reference_field (field, ref, value.item.r);
+				return T_OK;
+			} else if (SK_EXP == (field_type & SK_EXP)) {
+				//We need to set an expanded field.
+				size_t len = EIF_Size(field_type & SK_DTYPE);
+				memcpy (
+						ei_field (field, ref), 
+						value.item.r, 
+						len);
+				return T_OK;
+			} else {
+				// This might be a boxed value, except that we currently
+				// never call this method with a boxed simple value
+				// TODO: Maybe we could do a conversion?
+				return T_UNKNOWN_ERROR;
+			}
+		} else {
+			if ((field_type & SK_REF) == SK_REF) {
+				// A simple case of boxing
+				EIF_GET_CONTEXT
+				RT_GC_PROTECT (ref);
+				ei_set_reference_field (field, ref, eif_box (value));
+				RT_GC_WEAN (ref);
+				return T_OK;
+			}
+			switch (value.type) {
+				case SK_BOOL:
+					switch (field_type) {
+						case SK_BOOL:
+							ei_set_boolean_field (field, ref, value.item.b);
+							return T_OK;
+					}
+					return T_NOT_CONFORMING;
+				case SK_CHAR8:
+					switch (field_type) {
+						case SK_CHAR8:
+							ei_set_char_field (field, ref, value.item.c1);
+							return T_OK;
+						case SK_CHAR32:
+							ei_set_char_32_field (field, ref, value.item.c4);
+							return T_OK;
+					}
+					return T_NOT_CONFORMING;
+				case SK_CHAR32:
+					switch (field_type) {
+						case SK_CHAR32:
+							ei_set_char_32_field (field, ref, value.item.c4);
+							return T_OK;
+					}
+					return T_NOT_CONFORMING;
+				case SK_FLOAT:
+					switch (field_type) {
+						case SK_FLOAT:
+							ei_set_float_field (field, ref, value.item.r4);
+							return T_OK;
+						case SK_DOUBLE:
+							ei_set_double_field (field, ref, (double) value.item.r4);
+							return T_OK;
+					}
+					return T_NOT_CONFORMING;
+				case SK_DOUBLE:
+					switch (field_type) {
+						case SK_FLOAT:
+							ei_set_float_field (field, ref, (float) value.item.r8);
+							return T_OK;
+						case SK_DOUBLE:
+							ei_set_double_field (field, ref, value.item.r8);
+							return T_OK;
+					}
+					return T_NOT_CONFORMING;
+				case SK_UINT8:
+				case SK_INT8:
+					switch (field_type) {
+						case SK_UINT8:
+						case SK_INT8:
+							ei_set_integer_8_field (field, ref, value.item.i1);
+							return T_OK;
+						case SK_UINT16:
+						case SK_INT16:
+							ei_set_integer_8_field (field, ref, (EIF_INTEGER_8) value.item.i2);
+							return T_OK;
+						case SK_UINT32:
+						case SK_INT32:
+							ei_set_integer_8_field (field, ref, (EIF_INTEGER_8) value.item.i4);
+							return T_OK;
+						case SK_UINT64:
+						case SK_INT64:
+							ei_set_integer_8_field (field, ref, (EIF_INTEGER_8) value.item.i8);
+							return T_OK;
+					}
+					return T_NOT_CONFORMING;
+				case SK_POINTER:
+					switch (field_type) {
+						case SK_POINTER:
+							ei_set_pointer_field (field, ref, value.item.p);
+							return T_OK;
+					}
+					return T_NOT_CONFORMING;
+			}
+			// Whatever it is, it is not supported, we put NULL in if the
+			// field is
+			return T_UNSUPPORTED;
+		}
+	} else {
+		if ((field_type & SK_REF) == SK_REF && 
+				full_field_type.annotations & DETACHABLE_FLAG) {
+			// Original value does not conform, but the field is detachable,
+			// so we set it to NULL
+			ei_set_reference_field (field, ref, NULL);
+			return T_OK;
+		} else {
+			// TODO: Maybe we could do a conversion?
+			return T_NOT_CONFORMING;
+		}
+	}
+}
+
+static EIF_TYPED_VALUE rt_dscoop_message_read_value (struct eif_dscoop_message* message, size_t offset);
+
+/* Reads the object at pos in the message. */
+EIF_REFERENCE rt_dscoop_message_read_object (struct eif_dscoop_message *msg, size_t offset)
+{
+	REQUIRE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
+	
+	struct rt_dscoop_message_object_arg* arg = (struct rt_dscoop_message_object_arg*)
+			(msg->data.raw + offset);
+
+	EIF_OBJECT obj = eifcreate (eif_type_id (arg->class_name));
+
+	size_t len = strnlen (arg->class_name, msg->length - offset);
+	if (len == msg->length) {
+		return NULL;
+	}
+	
+	EIF_TYPE type = eif_type_id2(arg->class_name);
+	if (type.id == INVALID_DTYPE) {
+		return NULL;
+	}
+	EIF_ENCODED_TYPE enctype = eif_encoded_type (type);
+
+	offset += sizeof (struct rt_dscoop_message_object_arg) + len;
+	for (int i = 0; i < arg->field_count; i++) {
+		struct eif_dscoop_message_str8_arg* ident_arg = rt_dscoop_message_read_identifier (msg, offset);
+		if (!ident_arg) {
+			return NULL;
+		}
+		offset += sizeof (struct eif_dscoop_message_str8_arg) + strlen (ident_arg->data);
+		EIF_TYPED_VALUE arg_value = rt_dscoop_message_read_value (msg, offset);
+				
+		long field = ei_field_with_name (ident_arg->data, enctype);
+		if (field >= 0) {
+			int error = smart_set_field (eif_access (obj), field, arg_value);
+			if (error) {
+				return NULL;
+			}
+		}
+	}
+	
+	ENSURE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));	
+	
+	return eif_wean (obj);
+	#undef ref
+}
+
+size_t rt_dscoop_message_extend_reference (struct eif_dscoop_message *msg, EIF_REFERENCE* ref)
 {
 	REQUIRE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
 	char* reftype = *ref ? eif_typename (eif_new_type (Dftype (*ref), ATTACHED_FLAG)) + 1
@@ -268,9 +612,8 @@ int eif_dscoop_message_add_ref_arg (struct eif_dscoop_message *msg, EIF_REFERENC
 	EIF_NATURAL_64 required_space = sizeof (struct eif_dscoop_message_ref_arg) + strlen (reftype);
 	enum eif_dscoop_message_arg_type type = A_REF;
 
-	int error = eif_dscoop_message_accommodate (msg, required_space);
-	if (error) {
-		return error;
+	if (eif_dscoop_message_accommodate (msg, required_space)) {
+		return 0;
 	}
 
 	struct eif_dscoop_message_ref_arg* arg =
@@ -296,106 +639,8 @@ int eif_dscoop_message_add_ref_arg (struct eif_dscoop_message *msg, EIF_REFERENC
 
 	strcpy (arg->reftype, reftype);
 
-	//Update the index and length
-	eif_dscoop_message_add_index (msg, required_space);
 	ENSURE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
-	return T_OK;
-}
-
-char* encode_string_8 (char * input)
-{
-	int i, j, count, len;
-
-	count = 3;
-	len = strlen (input);
-	for (i = 0; i < len; i++) {
-		char val = input[i];
-		switch (val) {
-			case '\n':
-			case '\t':
-			case '\r':
-			case 0:
-			case '%':
-			case '"':
-				count += 2;
-				break;
-			default:
-				if (val >= ' ' && val <= '~')
-					count++;
-				else
-					count += strlen ("%/256/");
-		}
-	}
-
-	char * ret = malloc (count);
-	j = 0;
-	CHECK ("Correct count calculation", j < count);
-	ret[j++] = '"';
-	for (i = 0; i < len; i++) {
-		char val = input[i];
-		switch (val) {
-			case '\n':
-				CHECK ("Correct count calculation", j < count);
-				ret[j++] = '%';
-				CHECK ("Correct count calculation", j < count);
-				ret[j++] = 'N';
-				break;
-			case '\t':
-				CHECK ("Correct count calculation", j < count);
-				ret[j++] = '%';
-				CHECK ("Correct count calculation", j < count);
-				ret[j++] = 'T';
-				break;
-			case '\r':
-				CHECK ("Correct count calculation", j < count);
-				ret[j++] = '%';
-				CHECK ("Correct count calculation", j < count);
-				ret[j++] = 'R';
-				break;
-			case 0:
-				CHECK ("Correct count calculation", j < count);
-				ret[j++] = '%';
-				CHECK ("Correct count calculation", j < count);
-				ret[j++] = 'U';
-				break;
-			case '%':
-				CHECK ("Correct count calculation", j < count);
-				ret[j++] = '%';
-				CHECK ("Correct count calculation", j < count);
-				ret[j++] = '%';
-				break;
-			case '"':
-				CHECK ("Correct count calculation", j < count);
-				ret[j++] = '%';
-				CHECK ("Correct count calculation", j < count);
-				ret[j++] = '"';
-				break;
-			default:
-				if (val >= ' ' && val <= '~') {
-					CHECK ("Correct count calculation", j < count);
-					ret[j++] = val;
-				} else {
-					CHECK ("Correct count calculation", j < count);
-					ret[j++] = '%';
-					CHECK ("Correct count calculation", j < count);
-					ret[j++] = '/';
-					char code[4];
-					snprintf (code, 4, "%hhu", val);
-					for (int k = 0; k < 4 && code[k]; k++) {
-						CHECK ("Correct count calculation", j < count);
-						ret[j++] = code[k];
-					}
-					CHECK ("Correct count calculation", j < count);
-					ret[j++] = '/';
-				}
-		}
-	}
-	CHECK ("Correct count calculation", j < count);
-	ret[j++] = '"';
-	CHECK ("Correct count calculation", j < count);
-	ret[j++] = 0;
-	CHECK ("Correct count calculation", j = count);
-	return ret;
+	return required_space;
 }
 
 EIF_BOOLEAN eif_dscoop_message_invariant (struct eif_dscoop_message* message)
@@ -451,11 +696,15 @@ rt_public void eif_dscoop_message_dispose (struct eif_dscoop_message * message)
 	}
 }
 
-rt_public int eif_dscoop_message_add_value_argument (struct eif_dscoop_message* message, EIF_TYPED_VALUE* arg, EIF_NATURAL_64 client_nid)
+// Adds the given value argument to the message, returning the byte count of the
+// argument. Does not update the index! A result of 0 indicates that some error 
+// happened
+size_t rt_dscoop_message_extend_value_internal 
+		(struct eif_dscoop_message* message, EIF_TYPED_VALUE* arg)
 {
 	REQUIRE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
 
-	int error = T_OK;
+	size_t result = 0;
 
 	char* item = NULL;
 	switch (arg->type) {
@@ -463,22 +712,22 @@ rt_public int eif_dscoop_message_add_value_argument (struct eif_dscoop_message* 
 		case SK_UINT8:
 		case SK_BOOL:
 		case SK_INT8:
-			error = eif_dscoop_message_accommodate (message, 2);
+			result = 2;
 			break;
 		case SK_UINT16:
 		case SK_INT16:
-			error = eif_dscoop_message_accommodate (message, 3);
+			result = 3;
 			break;
 		case SK_CHAR32:
 		case SK_UINT32:
 		case SK_INT32:
 		case SK_REAL32:
-			error = eif_dscoop_message_accommodate (message, 5);
+			result = 5;
 			break;
 		case SK_REAL64:
 		case SK_UINT64:
 		case SK_INT64:
-			error = eif_dscoop_message_accommodate (message, 9);
+			result = 9;
 			break;
 		case SK_REF:
 			if (arg->item.r && Dtype (arg->item.r) == ESTRING_8_type) {
@@ -486,13 +735,25 @@ rt_public int eif_dscoop_message_add_value_argument (struct eif_dscoop_message* 
 				if (!item) {
 					item = "";
 				}
-				error = eif_dscoop_message_accommodate (message, sizeof(struct eif_dscoop_message_str8_arg) + strlen (item));
+				result = sizeof(struct eif_dscoop_message_str8_arg) + strlen (item);
+			} else if (EIF_IS_EXPANDED_TYPE (System (Dtype (arg->item.r)))) {
+				result = rt_dscoop_message_object_space (&arg->item.r);
+			} else {
+				result = rt_dscoop_message_reference_space (&arg->item.r);
 			}
 			break;
 		default:
 			break;
 	}
-	if (error) return error;
+
+	if (result > 0) {
+		if (eif_dscoop_message_accommodate (message, result)) {
+			return 0;
+		}
+	} else {
+		return 0;
+	}
+	
 	switch (arg->type) {
 		case SK_CHAR8:
 		{
@@ -599,58 +860,50 @@ rt_public int eif_dscoop_message_add_value_argument (struct eif_dscoop_message* 
 		}
 		break;
 		case SK_VOID:
+		case SK_EXP:
 		case SK_REF:
-			if (arg->item.r && Dtype (arg->item.r) == ESTRING_8_type) {
-				struct eif_dscoop_message_str8_arg* val = (struct eif_dscoop_message_str8_arg*)
-						(message->data.raw + message->length);
-				val->type = A_STR_8;
-				strcpy (val->data, item);
+			if (arg->item.r) {
+				if (Dtype (arg->item.r) == ESTRING_8_type) {
+					struct eif_dscoop_message_str8_arg* val = (struct eif_dscoop_message_str8_arg*)
+							(message->data.raw + message->length);
+					val->type = A_STR_8;
+					strcpy (val->data, item);
+				} else if (SK_EXP == arg->type || EIF_IS_EXPANDED_TYPE (System (Dtype (arg->item.r)))) {
+					if (!rt_dscoop_message_extend_object (message, &arg->item.r)) {
+						return 0;
+					}
+				} else {
+					if (!rt_dscoop_message_extend_reference (message, &(arg->item.r))) {
+						return 0;
+					}
+				}
 			} else {
-				error = eif_dscoop_message_add_ref_arg (message, &(arg->item.r));
+				if (!rt_dscoop_message_extend_reference (message, &(arg->item.r))) {
+					return 0;
+				}
 			}
 			break;
 		default:
 			break;
 	}
-
-	if (error) {
-		return error;
-	}
-
-	switch (arg->type) {
-		case SK_CHAR8:
-		case SK_UINT8:
-		case SK_BOOL:
-		case SK_INT8:
-			error = eif_dscoop_message_add_index (message, 2);
-			break;
-		case SK_UINT16:
-		case SK_INT16:
-			error = eif_dscoop_message_add_index (message, 3);
-			break;
-		case SK_CHAR32:
-		case SK_UINT32:
-		case SK_INT32:
-		case SK_REAL32:
-			error = eif_dscoop_message_add_index (message, 5);
-			break;
-		case SK_REAL64:
-		case SK_UINT64:
-		case SK_INT64:
-			error = eif_dscoop_message_add_index (message, 9);
-			break;
-		case SK_REF:
-			if (arg->item.r && Dtype (arg->item.r) == ESTRING_8_type) {
-				error = eif_dscoop_message_add_index (message, sizeof (struct eif_dscoop_message_str8_arg) + strlen (item));
-			}
-			break;
-		default:
-			break;
-	}
-
+	
 	ENSURE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
-	return error;
+	return result;
+}
 
+// Adds the given typed value to the message and updates the index
+rt_public int eif_dscoop_message_add_value_argument (struct eif_dscoop_message* message, EIF_TYPED_VALUE* arg)
+{
+	REQUIRE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
+
+	size_t space = rt_dscoop_message_extend_value_internal (message, arg);
+	if (space) {
+		if (eif_dscoop_message_add_index (message, space)) {
+			ENSURE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
+			return T_OK;
+		}
+	}
+	return T_UNKNOWN_ERROR;
 }
 
 rt_public EIF_NATURAL_64 eif_dscoop_message_get_natural_argument (struct eif_dscoop_message * message, EIF_NATURAL_8 n)
@@ -975,7 +1228,7 @@ rt_public EIF_NATURAL_32 eif_dscoop_message_is_ref_argument (struct eif_dscoop_m
 	size_t offset = message->index[n];
 	enum eif_dscoop_message_arg_type t = message->data.raw[offset];
 	ENSURE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
-	return t == A_REF || t == A_STR_32 || t == A_STR_8 || t == A_VAL || t == A_CUSTOM || t == A_AGENT;
+	return t == A_REF || t == A_STR_32 || t == A_STR_8 || t == A_OBJ || t == A_CUSTOM || t == A_AGENT;
 }
 
 rt_public EIF_NATURAL_64 eif_dscoop_message_get_node_argument (struct eif_dscoop_message* message, EIF_NATURAL_8 n, char** address, EIF_NATURAL_16* port) {
@@ -996,16 +1249,13 @@ rt_public EIF_NATURAL_64 eif_dscoop_message_get_node_argument (struct eif_dscoop
 }
 
 // Retrieves the n-th argument. The argument has to be a typed value.
-rt_public EIF_TYPED_VALUE eif_dscoop_message_get_value_argument (struct eif_dscoop_message* message, EIF_NATURAL_8 n)
+static EIF_TYPED_VALUE rt_dscoop_message_read_value (struct eif_dscoop_message* message, size_t offset)
 {
 	REQUIRE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
-	REQUIRE ("argument_exists", eif_dscoop_message_get_arg_count (message) > n);
-	REQUIRE ("argument_is_value", eif_dscoop_message_is_argument_value (message));
 	EIF_GET_CONTEXT
 	EIF_TYPED_VALUE result;
 	result.type = SK_INVALID;
 
-	size_t offset = message->index[n];
 	enum eif_dscoop_message_arg_type type = message->data.raw[offset];
 	switch (type) {
 		case A_NAT_8:
@@ -1138,12 +1388,30 @@ rt_public EIF_TYPED_VALUE eif_dscoop_message_get_value_argument (struct eif_dsco
 			}
 		}
 		break;
+		case A_OBJ:
+		{
+			result.item.r = rt_dscoop_message_read_object (message, offset);
+			if (result.item.r) {
+				result.type = SK_REF;
+			} else {
+				result.type = SK_VOID;
+			}
+		}
 		default:
 			result.item.r = NULL;
 			result.type = SK_VOID;
 	}
 	ENSURE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
 	return result;
+}
+
+// Retrieves the n-th argument. The argument has to be a typed value.
+rt_public EIF_TYPED_VALUE eif_dscoop_message_get_value_argument (struct eif_dscoop_message* message, EIF_NATURAL_8 n)
+{
+	REQUIRE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
+	REQUIRE ("argument_exists", eif_dscoop_message_get_arg_count (message) > n);
+	REQUIRE ("argument_is_value", eif_dscoop_message_is_argument_value (message, n));
+	return rt_dscoop_message_read_value(message, message->index[n]);
 }
 
 rt_public EIF_BOOLEAN eif_dscoop_message_ok (struct eif_dscoop_message * message)
@@ -1167,14 +1435,17 @@ rt_private EIF_INTEGER_32 receive_exact_amount (int fd, void* buf, EIF_INTEGER_3
 	return pos;
 }
 
-rt_public EIF_INTEGER_32 eif_dscoop_message_index (struct eif_dscoop_message* message)
+int rt_dscoop_index_data (EIF_NATURAL_8 data[], size_t data_offset, size_t data_size, EIF_NATURAL_64* index, size_t index_size)
 {
-	REQUIRE ("eif_dscoop_message_initialized", eif_dscoop_message_initialized (message));
-	message->arg_count = 0;
-	int pos = DSCOOP_MESSAGE_HEADER_SIZE;
-	while (pos < (int) message->length) {
-		message->index[message->arg_count++] = pos;
-		enum eif_dscoop_message_arg_type t = message->data.raw[pos];
+	size_t arg_count = 0;
+	size_t skip = 0;
+	for (size_t pos = data_offset; pos < data_size && arg_count <= index_size; ) {
+		if (skip > 0) {
+			skip--;
+		} else {
+			index[arg_count++] = pos;
+		}
+		enum eif_dscoop_message_arg_type t = data[pos];
 		switch (t) {
 			case A_INT_8:
 			case A_NAT_8:
@@ -1202,7 +1473,7 @@ rt_public EIF_INTEGER_32 eif_dscoop_message_index (struct eif_dscoop_message* me
 			case A_STR_32:
 			{
 				struct eif_dscoop_message_str32_arg* arg =
-						(struct eif_dscoop_message_str32_arg*) (message->data.raw + pos);
+						(struct eif_dscoop_message_str32_arg*) (data + pos);
 				pos += sizeof (struct eif_dscoop_message_str32_arg) + 4 * str32len(arg->data);
 			}
 			break;
@@ -1210,33 +1481,49 @@ rt_public EIF_INTEGER_32 eif_dscoop_message_index (struct eif_dscoop_message* me
 			case A_STR_8:
 			{
 				struct eif_dscoop_message_str8_arg* arg =
-						(struct eif_dscoop_message_str8_arg*) (message->data.raw + pos);
+						(struct eif_dscoop_message_str8_arg*) (data + pos);
 				pos += sizeof (struct eif_dscoop_message_str8_arg) + strlen (arg->data);
 			}
 			break;
 			case A_REF:
 			{
 				struct eif_dscoop_message_ref_arg* arg =
-						(struct eif_dscoop_message_ref_arg*) (message->data.raw + pos);
+						(struct eif_dscoop_message_ref_arg*) (data + pos);
 				pos += sizeof (struct eif_dscoop_message_ref_arg) + strlen (arg->reftype);
 			}
 			break;
 			case A_NODE:
 			{
 				struct eif_dscoop_message_node_arg* arg =
-						(struct eif_dscoop_message_node_arg*) (message->data.raw + pos);
+						(struct eif_dscoop_message_node_arg*) (data + pos);
 				pos += sizeof (struct eif_dscoop_message_node_arg) + strlen(arg->address);
 			}
 			break;
-			case A_VAL:
+			case A_OBJ:
+			{
+				struct rt_dscoop_message_object_arg* arg =
+						(struct rt_dscoop_message_object_arg*) (data + pos);
+				pos += sizeof (struct eif_dscoop_message_node_arg) + strlen(arg->class_name);
+				skip = arg->field_count;
+			}
+			break;
 			case A_AGENT:
 			case A_CUSTOM:
 			default:
-				return T_UNKNOWN_ERROR;
+				return -1;
 		}
 	}
-	return T_OK;
+	return arg_count;
 	ENSURE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
+}
+
+EIF_BOOLEAN rt_dscoop_message_index (struct eif_dscoop_message* message)
+{
+	REQUIRE ("eif_dscoop_message_initialized", eif_dscoop_message_initialized (message));
+	ssize_t result = rt_dscoop_index_data (message->data.raw, DSCOOP_MESSAGE_HEADER_SIZE, message->length, message->index, DSCOOP_MAX_ARGUMENTS);
+	message->arg_count = result > 0 ? result : 0;
+	ENSURE ("eif_dscoop_message_invariant", eif_dscoop_message_invariant (message));
+	return result >= 0;
 }
 
 EIF_BOOLEAN eif_dscoop_message_receive_request (struct eif_dscoop_connection* connection, struct eif_dscoop_message* result)
@@ -1308,7 +1595,7 @@ EIF_BOOLEAN eif_dscoop_message_receive_request (struct eif_dscoop_connection* co
 			message->length = body_length + DSCOOP_MESSAGE_HEADER_SIZE;
 		}
 
-		if (eif_dscoop_message_index (message)) {
+		if (!rt_dscoop_message_index (message)) {
 			// Indexing failed, so we ignore the message
 			// TODO: Maybe we should inform waiting requests?
 			// OTOH, waiting requests should time out anyway ...
