@@ -265,7 +265,7 @@ feature {NONE} -- Separate call
 			-- <Precursor>
 		do
 				-- We don't need anything special for constants.
-			buffer.put_string (once "NULL, eif_call_const, 0, NULL, NULL")
+			buffer.put_string (once "NULL, eif_call_const, 0")
 		end
 
 

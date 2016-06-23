@@ -405,7 +405,7 @@ feature {ACCESS_B} -- C code generation: separate call
 		do
 			buf := buffer
 			buf.put_new_line
-			buf.put_string ("RTS_RCALL (")
+			buf.put_string ("RTS_CALL (")
 			if context.workbench_mode then
 
 					-- Generate the routine ID.

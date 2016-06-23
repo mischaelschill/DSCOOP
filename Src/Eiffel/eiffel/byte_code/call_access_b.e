@@ -551,14 +551,6 @@ feature {NONE} -- Separate call
 
 				-- Generate the offset.
 			buf.put_three_character (',', ' ', '0')
-
-				-- Generate the target type (for remote calls)
-			buf.put_two_character (',', ' ')
-			buf.put_string_literal (target_type.actual_type.as_marks_free.name)
-
-				-- Generate the feature name (for remote calls)
-			buf.put_two_character (',', ' ')
-			buf.put_string_literal (feature_name)
 		end
 
 	generate_workbench_separate_call_get_result (a_result: REGISTRABLE)

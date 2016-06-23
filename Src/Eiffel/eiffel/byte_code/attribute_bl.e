@@ -272,15 +272,6 @@ feature {NONE} -- Separate call
 					attr_table.generate_attribute_offset (buf, target_type, context.context_class_type)
 				end
 			end
-
-				-- Generate the target type (for remote calls)
-			buf.put_two_character (',', ' ')
-			buf.put_string_literal (target_type.actual_type.as_marks_free.dump)
-
-				-- Generate the feature name (for remote calls)
-			buf.put_two_character (',', ' ')
-			buf.put_string_literal (attribute_name)
-
 		end
 
 note
