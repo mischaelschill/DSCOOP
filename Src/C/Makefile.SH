@@ -1,5 +1,5 @@
-: Makefile.SH generated from Jmake.tmpl and Jmakefile [jmake 3.5-206]
-: $X-Id$
+: Makefile.SH generated from Jmake.tmpl and Jmakefile [jmake 3.5 PL0]
+: $X-Id: Jmake.tmpl 91075 2005-12-28 23:58:23Z manus $
 
 case $CONFIG in
 '')
@@ -17,7 +17,7 @@ esac
 case "$0" in
 */*) cd `expr X$0 : 'X\(.*\)/'` ;;
 esac
-CURRENT=CURDIR
+CURRENT=.
 DIR=`echo $CURRENT/ | sed -e 's/\.\///g'`
 echo "Extracting ${DIR}Makefile (with variable substitutions)"
 
@@ -29,7 +29,7 @@ $spitshell >Makefile <<!GROK!THIS!
 
 SHELL = /bin/sh
 JMAKE = jmake
-TOP = TOPDIR
+TOP = .
 CURRENT = $CURRENT
 DIR = $DIR
 
@@ -37,7 +37,6 @@ DIR = $DIR
 # Parameters set by Configure -- edit config.sh if changes are needed
 
 CTAGS = ctags
-JCPPFLAGS = $cppflags
 MAKE = make
 MV = $mv
 RM = $rm -f
@@ -51,7 +50,7 @@ SUBDIRS = \$(SUB)
 $spitshell >>Makefile <<'!NO!SUBS!'
 ########################################################################
 # Jmake rules for building libraries, programs, scripts, and data files
-# $X-Id$
+# $X-Id: Jmake.rules 18 2006-12-27 10:35:09Z rmanfredi $
 ########################################################################
 # Start of Jmakefile
 
@@ -81,7 +80,6 @@ local_clobber::
 ########################################################################
 # Common rules for all Makefiles -- do not edit
 
-all::
 emptyrule::
 
 clean: sub_clean local_clean
@@ -120,7 +118,6 @@ tags::
 local_clobber::
 	$(RM) tags
 
-depend::
 ########################################################################
 # Rules for building in sub-directories -- do not edit
 
@@ -134,9 +131,6 @@ subdirs:
 
 sub_install::
 	@$(MAKE) subdirs TARGET=install VERB="Installing" FLAGS=
-
-sub_install-strip::
-	@$(MAKE) subdirs TARGET=install-strip VERB="Installing (strip)" FLAGS=
 
 sub_deinstall::
 	@$(MAKE) subdirs TARGET=deinstall VERB="Deinstalling" FLAGS=

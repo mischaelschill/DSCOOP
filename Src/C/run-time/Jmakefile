@@ -52,9 +52,7 @@ MTADD = \
 	queue_cache.c \
 	message_channel.c \
 	request_group.c \
-	identifier_set.c \
-	dscoop.c \
-	dscoop_message.c
+	identifier_set.c
 
 /*
  * Files for workbench have a 'w' pre-pended if they already exist for

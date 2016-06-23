@@ -130,9 +130,7 @@ MTADD = \
 	queue_cache.c \
 	message_channel.c \
 	request_group.c \
-	identifier_set.c \
-	dscoop.c \
-	dscoop_message.c
+	identifier_set.c
 
 WOBJ = \
 	$(IDRS_OBJ) \
@@ -256,8 +254,6 @@ MT_WOBJ = \
 	MTwmessage_channel.o \
 	MTwrequest_group.o \
 	MTwidentifier_set.o \
-	MTwdscoop.o \
-	MTwdscoop_message.o \
 	MTwmalloc.o \
 	MTwgarcol.o \
 	MTwlocal.o \
@@ -317,8 +313,6 @@ MT_LOBJ = \
 	MTmessage_channel.o \
 	MTrequest_group.o \
 	MTidentifier_set.o \
-	MTdscoop.o \
-	MTdscoop_message.o \
 	MTmalloc.o \
 	MTgarcol.o \
 	MTlocal.o \
@@ -839,12 +833,6 @@ MTwrequest_group.o: scoop/request_group.c
 MTwidentifier_set.o: scoop/identifier_set.c
 	$(CC) -c $(JMTCFLAGS) -DWORKBENCH $? -o $@
 
-MTwdscoop.o: scoop/dscoop.c
-	$(CC) -c $(JMTCFLAGS) -DWORKBENCH $? -o $@
-
-MTwdscoop_message.o: scoop/dscoop_message.c
-	$(CC) -c $(JMTCFLAGS) -DWORKBENCH $? -o $@
-
 
 MTscoop.o: scoop/scoop.c
 	$(CC) -c $(JMTCFLAGS) $? -o $@
@@ -874,12 +862,6 @@ MTrequest_group.o: scoop/request_group.c
 	$(CC) -c $(JMTCFLAGS) $? -o $@
 
 MTidentifier_set.o: scoop/identifier_set.c
-	$(CC) -c $(JMTCFLAGS) $? -o $@
-
-MTdscoop.o: scoop/dscoop.c
-	$(CC) -c $(JMTCFLAGS) $? -o $@
-
-MTdscoop_message.o: scoop/dscoop_message.c
 	$(CC) -c $(JMTCFLAGS) $? -o $@
 
 
