@@ -194,19 +194,11 @@ d_tls='undef'
 objcflags='-ObjC'
 mtccflags="$ccflags -DEIF_THREADS -DEIF_LINUXTHREADS"
 mtcppflags="$cppflags -DEIF_THREADS -DEIF_LINUXTHREADS"
-<<<<<<< HEAD
 optimize="-O0 -g"
 voidflags='15'
 #Check value for next 1
 warning_level='-Wall -Wextra -Wno-unused-parameter -Wno-long-long -pedantic -std=gnu99'
 wkoptimize="-O0 -g"
-=======
-optimize="-O3"
-voidflags='15'
-#Check value for next 1
-warning_level='-Wall -Wextra -Wno-unused-parameter -Wno-long-long -pedantic -std=gnu99'
-wkoptimize="-O0"
->>>>>>> e410c41eb12074d811e4063b1808f7899551ad15
 
 #Makefiles
 ar='ar'
@@ -247,11 +239,7 @@ shared_suffix='.so'
 shared_rt_suffix='.so'
 sharedlibs='-lm'
 mtsharedlibs='-lm -lpthread'
-<<<<<<< HEAD
-sharedlibversion='.16.05'
-=======
 sharedlibversion='.16.11'
->>>>>>> e410c41eb12074d811e4063b1808f7899551ad15
 sharedlink='ld'
 suffix='.a'
 wkeiflib='wkbench'

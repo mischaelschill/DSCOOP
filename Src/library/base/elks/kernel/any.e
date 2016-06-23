@@ -1,18 +1,9 @@
-<<<<<<< HEAD
 note
-=======
-﻿note
->>>>>>> e410c41eb12074d811e4063b1808f7899551ad15
 	description: "[
 		Project-wide universal properties.
 		This class is an ancestor to all developer-written classes.
 		ANY may be customized for individual projects or teams.
-<<<<<<< HEAD
-		]"
-
-=======
 	]"
->>>>>>> e410c41eb12074d811e4063b1808f7899551ad15
 	library: "Free implementation of ELKS library"
 	status: "See notice at end of class."
 	legal: "See notice at end of class."
@@ -366,16 +357,10 @@ feature -- Basic operations
 		end
 
 	frozen as_attached: attached like Current
-<<<<<<< HEAD
-			-- Attached version of Current
-			-- (Can be used during transitional period to convert
-			-- non-void-safe classes to void-safe ones.)
-=======
 			-- Attached version of Current.
 			-- (Can be used during transitional period to convert
 			-- non-void-safe classes to void-safe ones.)
 		obsolete "Remove calls to this feature as soon as its client is void-safe."
->>>>>>> e410c41eb12074d811e4063b1808f7899551ad15
 		do
 			Result := Current
 		end
@@ -385,11 +370,7 @@ invariant
 	reflexive_conformance: conforms_to (Current)
 
 note
-<<<<<<< HEAD
 	copyright: "Copyright (c) 1984-2012, Eiffel Software and others"
-=======
-	copyright: "Copyright (c) 1984-2016, Eiffel Software and others"
->>>>>>> e410c41eb12074d811e4063b1808f7899551ad15
 	license:   "Eiffel Forum License v2 (see http://www.eiffel.com/licensing/forum.txt)"
 	source: "[
 			Eiffel Software
