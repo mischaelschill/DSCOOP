@@ -88,13 +88,13 @@ RT_LNK long *nbref;		/* Gives # of references given DT */
 
 
 #ifndef WORKBENCH
-#define Cecil(type)			egc_ce_rname[type]			/* Final mode acces to hash table */
+#define Cecil(type)			egc_ce_routines[type]			/* Final mode acces to hash table */
 #define References(type)	nbref[type] 	/* # of references */
 #define Dispose(type)		egc_edispose[type]	/* Dispose routine */
 #define Disp_rout(type)		egc_edispose[type]	/* Does type have disp routine */
 #define XCreate(type)		egc_ecreate[type]	/* Initialization routine */
 #else
-#define Cecil(type)			esystem[type].cn_cecil	/* Workbench mode access */
+#define Cecil(type)			esystem[type].ce_info	/* Workbench mode access */
 #define References(type)	esystem[type].cn_nbref
 #define Disp_rout(type)		EIF_TYPE_HAS_DISPOSE(esystem[type]) /* Does type have disp routine ? */
 #define Dispose(type) ((void (*)()) wdisp(type));

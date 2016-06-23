@@ -124,7 +124,7 @@ feature {NONE} -- Implementation
 							Error_handler.insert_error (l_vhrc2)
 						else
 							l_new_name := l_rename_pair.new_name
-							l_renaming_c.put (create {RENAMING}.make (l_new_name.internal_name.name_id, l_new_name.internal_alias_name_id, l_new_name.has_convert_mark), old_name_id)
+							l_renaming_c.put (create {RENAMING}.make (l_new_name.internal_name.name_id, l_new_name.internal_alias_name_id, l_new_name.has_convert_mark, old_name_id), old_name_id)
 						end
 
 						l_renaming.forth
@@ -246,7 +246,7 @@ feature {NONE} -- Implementation
 	Selec: INTEGER = 3;
 
 note
-	copyright:	"Copyright (c) 1984-2014, Eiffel Software"
+	copyright:	"Copyright (c) 1984-2016, Eiffel Software"
 	license:	"GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options:	"http://www.eiffel.com/licensing"
 	copying: "[

@@ -2747,7 +2747,7 @@ rt_private void full_update(void)
 #ifdef EIF_THREADS
 		/* Updates the table that maps objects to ids*/
 	rt_dscoop_update_weak_references();
-#endif EIF_THREADS
+#endif
 		/* Then we proceed with `moved_set'. */
 	update_moved_set();
 

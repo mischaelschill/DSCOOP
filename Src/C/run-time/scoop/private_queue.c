@@ -42,7 +42,7 @@ doc:<file name="private_queue.c" header="rt_private_queue.h" version="$Id$" summ
 #include "rt_private_queue.h"
 #include "rt_processor.h"
 #include "eif_scoop.h"
-#include "rt_dscoop.h"       
+#include "rt_dscoop.h"
 
 /* Macro used to remember the result in workbench mode. Has no effect in finalized mode. */
 #ifdef WORKBENCH
