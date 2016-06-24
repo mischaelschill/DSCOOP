@@ -42,7 +42,6 @@ doc:<file name="private_queue.c" header="rt_private_queue.h" version="$Id$" summ
 #include "rt_private_queue.h"
 #include "rt_processor.h"
 #include "eif_scoop.h"
-#include "rt_dscoop.h"
 
 /* Macro used to remember the result in workbench mode. Has no effect in finalized mode. */
 #ifdef WORKBENCH
@@ -78,8 +77,6 @@ rt_shared int rt_private_queue_init (struct rt_private_queue* self, struct rt_pr
 
 	error = rt_message_channel_init (&self->channel, 512);
 
-	eif_dscoop_compensation_list_init (&self->compensations);
-	
 	return error;
 }
 
@@ -95,7 +92,6 @@ rt_shared void rt_private_queue_deinit (struct rt_private_queue* self)
 {
 	REQUIRE ("self_not_null", self);
 	rt_message_channel_deinit (&self->channel);
-	eif_dscoop_compensation_list_deinit (&self->compensations);
 }
 
 /*
@@ -179,7 +175,7 @@ rt_shared void rt_private_queue_lock (struct rt_private_queue* self, struct rt_p
 			RT_TRACE (eif_pthread_mutex_lock (self->supplier->wait_condition_mutex));
 			self->synced = EIF_TRUE;
 		} else {
-			rt_message_channel_send (&(self->supplier->queue_of_queues), SCOOP_MESSAGE_ADD_QUEUE, client, NULL, self, NULL);
+			rt_message_channel_send (&(self->supplier->queue_of_queues), SCOOP_MESSAGE_ADD_QUEUE, client, NULL, self);
 			self->synced = EIF_FALSE;
 		}
 	}
@@ -209,13 +205,9 @@ rt_shared void rt_private_queue_unlock (struct rt_private_queue* self, EIF_BOOLE
 			RT_TRACE (eif_pthread_mutex_unlock (self->supplier->wait_condition_mutex));
 		} else {
 			enum scoop_message_type l_type = is_wait_condition_failure ? SCOOP_MESSAGE_WAIT_CONDITION_UNLOCK : SCOOP_MESSAGE_UNLOCK;
-			rt_message_channel_send (&self->channel, l_type, NULL, NULL, NULL, NULL);
+			rt_message_channel_send (&self->channel, l_type, NULL, NULL, NULL);
 		}
 		self->synced = EIF_FALSE;
-		for (size_t i = 0; i < eif_dscoop_compensation_list_count (&self->compensations); i++) {
-			eif_wean (eif_dscoop_compensation_list_item (&self->compensations, i).agent);
-		}
-		eif_dscoop_compensation_list_clear (&self->compensations);
 	}
 }
 
@@ -285,10 +277,10 @@ rt_shared void rt_private_queue_log_call (struct rt_private_queue* self, struct 
 			 * This cannot happen. Separate callbacks are _always_ impersonated, and the only case when
 			 * this piece of code can be executed is during a separate callback to a region that is marked as
 			 * non-impersonable. In that case, the 'result_notify_proxy' is the correct one. */
-		rt_message_channel_send (self->supplier->result_notify_proxy, SCOOP_MESSAGE_CALLBACK, client, call, NULL, NULL);
+		rt_message_channel_send (self->supplier->result_notify_proxy, SCOOP_MESSAGE_CALLBACK, client, call, NULL);
 
 	} else {
-		rt_message_channel_send (&self->channel, SCOOP_MESSAGE_EXECUTE, client, call, NULL, NULL);
+		rt_message_channel_send (&self->channel, SCOOP_MESSAGE_EXECUTE, client, call, NULL);
 	}
 		/* NOTE: After the previous send operations, the eif_scoop_call_data struct might have been */
 		/* free()'d by the supplier. Therefore it must not be accessed any more here. */

@@ -40,8 +40,6 @@
 
 #include "eif_portable.h"
 #include "rt_assert.h"
-#include "eif_hector.h"
-#include "rt_dscoop_message.h"
 
 struct rt_processor;
 struct rt_private_queue;
@@ -70,8 +68,6 @@ struct rt_request_group
 	struct rt_processor* client;
 	EIF_BOOLEAN is_sorted;
 	EIF_BOOLEAN is_locked;
-		/* This field is used to keep proxy processors alive even if they do not have a real object. */
-	EIF_OBJECT anchor;
 };
 
 /*
@@ -92,7 +88,6 @@ rt_private rt_inline void rt_request_group_init (struct rt_request_group* self, 
 	self->is_sorted = 0;
 	self->is_locked = 0;
 	self->client = a_client;
-	self->anchor = 0;
 }
 
 /*
@@ -108,27 +103,13 @@ rt_private rt_inline void rt_request_group_deinit (struct rt_request_group* self
 	REQUIRE ("not_null", self);
 	REQUIRE ("not_locked", !self->is_locked);
 	free (self->area);
-	if (self->anchor)
-		eif_wean (self->anchor);
 	rt_request_group_init (self, NULL);
 }
 
 
-rt_private rt_inline void rt_request_group_set_anchor (struct rt_request_group* self, EIF_OBJECT anchor)
-{
-	if (self->anchor)
-		eif_wean (self->anchor);
-	if (anchor)
-		self->anchor = eif_adopt(anchor);
-	else
-		self->anchor = NULL;
-}
-
 /* Declarations */
 rt_shared int rt_request_group_add (struct rt_request_group* self, struct rt_processor* supplier);
 rt_shared int rt_request_group_wait (struct rt_request_group* self);
-rt_shared void rt_request_group_prelock (struct rt_request_group* self);
-rt_shared void rt_request_group_postlock (struct rt_request_group* self);
 rt_shared void rt_request_group_lock (struct rt_request_group* self);
 rt_shared void rt_request_group_unlock (struct rt_request_group* self, EIF_BOOLEAN is_wait_condition_failure);
 

@@ -74,14 +74,7 @@ enum scoop_message_type {
 	SCOOP_MESSAGE_ADD_QUEUE,
 
 		/* Shutdown the processor. This is used by the garbage collector to instruct a dead processor to terminate itself. */
-	SCOOP_MESSAGE_SHUTDOWN,
-
-		/* A forwarded D-SCOOP message. */	
-	SCOOP_DSCOOP_MESSAGE,
-
-		/* Revert operation. Cause the processor to start a revert on all locked queues. */
-	SCOOP_MESSAGE_REVERT
-
+	SCOOP_MESSAGE_SHUTDOWN
 };
 
 /*
@@ -95,10 +88,8 @@ doc:	</struct>
  */
 struct rt_message {
   struct rt_processor* sender_processor;
-/* Maybe we can coalesce all three into one union (or void*) */
   struct eif_scoop_call_data* call;
   struct rt_private_queue* queue;
-  void* data;
   enum scoop_message_type message_type;
 };
 
@@ -117,7 +108,6 @@ rt_private rt_inline void rt_message_init (struct rt_message* self)
 	self->sender_processor = NULL;
 	self->call = NULL;
 	self->queue = NULL;
-	self->data = NULL;
 	self->message_type = SCOOP_MESSAGE_INVALID;
 }
 

@@ -85,8 +85,6 @@ typedef struct eif_scoop_call_data {
 	EIF_POINTER result;
 	void (* pattern) (struct eif_scoop_call_data *);
 #endif
-	char* class_name;                     /* Name of the class where feature_name points to the correct feature */
-	char* feature_name;                     /* Name of the feature to call */
 	EIF_NATURAL_16 count;
 	EIF_INTEGER_16 offset;
 	EIF_BOOLEAN is_synchronous;
@@ -120,8 +118,6 @@ RT_LNK void eif_scoop_lock_request_group (EIF_SCP_PID client_pid);
 RT_LNK size_t eif_scoop_lock_stack_count (EIF_SCP_PID processor_id);
 RT_LNK void eif_scoop_lock_stack_impersonated_push (EIF_SCP_PID client_processor_id, EIF_SCP_PID supplier_region_id);
 RT_LNK void eif_scoop_lock_stack_impersonated_pop (EIF_SCP_PID client_processor_id, size_t count);
-RT_LNK void eif_scoop_prepare_separate_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID client_region_id, struct eif_scoop_call_data* call);
-RT_LNK EIF_TYPE_ID eif_get_eif_dscoop_proxy_dtype();
 
 /* Debugger extensions. */
 RT_LNK EIF_SCP_PID eif_scoop_client_of (EIF_SCP_PID supplier);

@@ -439,7 +439,7 @@ rt_private void spawn_main (EIF_REFERENCE dummy_thread_object, EIF_SCP_PID pid)
 
 		/* Send a message to the creator thread that we have succesfully spawned.
 		 * We recycle the RESULT_READY message here since the creator is not interested in the message anyway. */
-	rt_message_channel_send (&proc->startup_notify, SCOOP_MESSAGE_RESULT_READY, NULL, NULL, NULL, NULL);
+	rt_message_channel_send (&proc->startup_notify, SCOOP_MESSAGE_RESULT_READY, NULL, NULL, NULL);
 
 	rt_processor_application_loop (proc);
 

@@ -465,14 +465,6 @@ feature {NONE} -- Separate call
 			-- <Precursor>
 		do
 			buffer.put_integer (routine_id)
-
-				-- Generate the target type (for remote calls)
-			buffer.put_two_character (',', ' ')
-			buffer.put_string_literal (context_type.actual_type.as_marks_free.name)
-
-				-- Generate the feature name (for remote calls)
-			buffer.put_two_character (',', ' ')
-			buffer.put_string_literal (feature_name)
 		end
 
 	generate_finalized_separate_call_args (a_target: REGISTRABLE; a_has_result: BOOLEAN)

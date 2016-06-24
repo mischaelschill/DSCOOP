@@ -42,7 +42,6 @@ doc:<file name="processor.c" header="rt_processor.h" version="$Id$" summary="Rep
 #include "rt_processor.h"
 #include "eif_scoop.h"
 #include "rt_scoop_helpers.h"
-#include "rt_dscoop.h"
 
 #include "eif_atomops.h"
 #include "eif_posix_threads.h"
@@ -111,13 +110,10 @@ rt_shared int rt_processor_create (EIF_SCP_PID a_pid, EIF_BOOLEAN is_root_proces
 
 			/* Initialize the data fields. */
 		self->pid = a_pid;
-		self->connection = 0;
 		self->client = EIF_NULL_PROCESSOR;
 		self->is_active = EIF_TRUE;
 		self->is_dirty = EIF_FALSE;
 		self->is_impersonation_allowed = EIF_TRUE;
-		self->remote_pid = EIF_NULL_PROCESSOR;
-		self->compensation_counter = 0;
 		self->result_notify_proxy = &self->result_notify;
 			/* Only the root processor's creation procedure is initially "logged". */
 		self->is_creation_procedure_logged = is_root_processor;
@@ -334,11 +330,11 @@ rt_shared void rt_processor_execute_call (struct rt_processor* self, struct rt_p
 		if (self->is_dirty) {
 			self->is_dirty = EIF_FALSE;
 				/* Propagate exceptions on a synchronous call. */
-			rt_message_channel_send (client->result_notify_proxy, SCOOP_MESSAGE_DIRTY, NULL, NULL, NULL, NULL);
+			rt_message_channel_send (client->result_notify_proxy, SCOOP_MESSAGE_DIRTY, NULL, NULL, NULL);
 
 		} else {
 				/* Inform the client that we finished executing his call. */
-			rt_message_channel_send (client->result_notify_proxy, SCOOP_MESSAGE_RESULT_READY, NULL, NULL, NULL, NULL);
+			rt_message_channel_send (client->result_notify_proxy, SCOOP_MESSAGE_RESULT_READY, NULL, NULL, NULL);
 		}
 	}
 
@@ -362,8 +358,6 @@ rt_private void rt_processor_process_private_queue (struct rt_processor* self, s
 
 	REQUIRE ("self_not_null", self);
 	REQUIRE ("queue_not_null", queue);
-	
-	self->current_queue = queue;
 
 	while (!is_stopped) {
 
@@ -389,8 +383,6 @@ rt_private void rt_processor_process_private_queue (struct rt_processor* self, s
 				CHECK ("valid_message", EIF_FALSE);
 		}
 	}
-
-	self->current_queue = NULL;
 }
 
 /*
@@ -459,7 +451,7 @@ rt_shared void rt_processor_application_loop (struct rt_processor* self)
 			 * the mechanism here has become obsolete and can be
 			 * removed.
 			 */
-		if (!self->is_active && decrement_and_fetch_active_processor_count() == 0
+		if (decrement_and_fetch_active_processor_count() == 0
 			&& rt_message_channel_is_empty (&self->queue_of_queues)) {
 			plsc();
 		}
@@ -482,30 +474,9 @@ rt_shared void rt_processor_application_loop (struct rt_processor* self)
 
 			self->is_active = EIF_FALSE;
 			self->client = EIF_NULL_PROCESSOR;
-		} else if (next_job.message_type == SCOOP_DSCOOP_MESSAGE) {
-			CHECK ("valid_eif_dscoop_message", eif_dscoop_message_invariant ((struct eif_dscoop_message*)next_job.data));
-			increment_active_processor_count();
-			self->is_active = EIF_TRUE;
-			self->client = next_job.sender_processor->pid;
-
-			eif_dscoop_process_message (self, (struct eif_dscoop_message*)next_job.data);
-
-			self->is_active = self->request_group_stack.count > 0;
-			self->client = EIF_NULL_PROCESSOR;
-		} else if (next_job.message_type == SCOOP_MESSAGE_REVERT) {
-			increment_active_processor_count();
-			self->client = next_job.sender_processor->pid;
-
-			eif_dscoop_transaction_revert (self);
-
-			self->is_active = EIF_FALSE;
-			self->client = EIF_NULL_PROCESSOR;
 		} else {
 			CHECK ("shutdown_message", next_job.message_type == SCOOP_MESSAGE_SHUTDOWN);
 			is_stopped = EIF_TRUE;
-			if (self->connection) {
-				rt_dscoop_deregister_proxy_processor (self->connection->remote_nid, self->remote_pid);
-			}
 		}
 	}
 		/* Check disabled because queue-of-queues might contain multiple shutdown messages. */
@@ -525,7 +496,7 @@ doc:	</routine>
 rt_shared void rt_processor_shutdown (struct rt_processor* self)
 {
 	REQUIRE ("self_not_null", self);
-	rt_message_channel_send (&self->queue_of_queues, SCOOP_MESSAGE_SHUTDOWN, NULL, NULL, NULL, NULL);
+	rt_message_channel_send (&self->queue_of_queues, SCOOP_MESSAGE_SHUTDOWN, NULL, NULL, NULL);
 }
 
 /*
@@ -598,12 +569,7 @@ rt_shared int rt_processor_subscribe_wait_condition (struct rt_processor* self, 
 	REQUIRE ("queue_available", T_OK == rt_queue_cache_retrieve (&client->cache, self, &pq));
 	REQUIRE ("synchronized", rt_private_queue_is_synchronized (pq));
 
-	if (self->connection) {
-		// Nothing to do here. The AWAIT message is sent upon unlock
-		return 0;
-	} else {
-		return subscriber_list_t_extend (&self->wait_condition_subscribers, client);
-	}
+	return subscriber_list_t_extend (&self->wait_condition_subscribers, client);
 }
 
 
@@ -709,22 +675,6 @@ rt_shared void rt_processor_request_group_stack_remove (struct rt_processor* sel
 		rt_request_group_deinit (l_last);
 		request_group_stack_t_remove_last (&self->request_group_stack);
 	}
-}
-
-EIF_NATURAL_64 rt_processor_next_compensation_no (struct rt_processor* self)
-{
-	EIF_NATURAL_64 no, old_no;
-	
-	do {
-		old_no = self->compensation_counter;
-		no = old_no + 1;
-		if (no == 0)
-			no++;
-		// TODO: Make this platform independent
-	} while (!__sync_bool_compare_and_swap (&self->compensation_counter, old_no, no));
-	
-	return no;
-
 }
 
 /*

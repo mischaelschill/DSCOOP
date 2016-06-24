@@ -2727,8 +2727,6 @@ rt_private void full_sweep(void)
 	 * objects so there's no problem */
 }
 
-void rt_dscoop_update_weak_references();
-
 rt_private void full_update(void)
 {
 	/* After a mark and sweep, eventually mixed with scavenging, the data
@@ -2743,11 +2741,7 @@ rt_private void full_update(void)
 		/* Must be done before anything else as it relies on EO_MARK to find out if objects are
 		 * dead or not. */
 	update_weak_references();
-	
-#ifdef EIF_THREADS
-		/* Updates the table that maps objects to ids*/
-	rt_dscoop_update_weak_references();
-#endif
+
 		/* Then we proceed with `moved_set'. */
 	update_moved_set();
 

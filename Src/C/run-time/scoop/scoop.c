@@ -180,7 +180,7 @@ doc:		<thread_safety> Not safe. </thread_safety>
 doc:		<synchronization> None </synchronization>
 doc:	</routine>
 */
-rt_public void eif_scoop_prepare_separate_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID client_region_id, struct eif_scoop_call_data* call)
+rt_private void prepare_separate_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID client_region_id, struct eif_scoop_call_data* call)
 {
 	EIF_REFERENCE obj = NULL;
 	EIF_SCP_PID supplier_id = RTS_PID (call->target);
@@ -245,7 +245,7 @@ rt_public void eif_scoop_log_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID 
 	REQUIRE("different_regions", client_region_id != supplier_pid);
 
 		/* Calculate whether this call is synchronous. */
-	eif_scoop_prepare_separate_call (client_processor_id, client_region_id, data);
+	prepare_separate_call (client_processor_id, client_region_id, data);
 
 		/* Check whether we can impersonate the call. At this stage,
 		 * we may still encounter some impersonable calls from the interpreter

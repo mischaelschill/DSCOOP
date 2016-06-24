@@ -43,7 +43,6 @@
 #include "rt_queue_cache.h"
 
 #include "rt_vector.h"
-#include "rt_dscoop.h"
 
 /* Define the struct to be used for the group stack. */
 RT_DECLARE_VECTOR_BASE (request_group_stack_t, struct rt_request_group)
@@ -115,14 +114,6 @@ struct rt_processor {
 	struct private_queue_list_t generated_private_queues;
 	EIF_MUTEX_TYPE* generated_private_queues_mutex;
 
-	// Used by external processors
-	struct rt_private_queue* current_queue;
-	struct eif_dscoop_connection* connection;	
-	EIF_SCP_PID remote_pid;
-	
-	// Transaction support
-	volatile EIF_NATURAL_64 compensation_counter;
-	
 	EIF_SCP_PID pid;
 	EIF_SCP_PID client;
 	EIF_BOOLEAN is_active;
@@ -164,6 +155,5 @@ rt_shared void rt_processor_application_loop (struct rt_processor* self);
 
 /* Utility functions. */
 int rt_processor_new_private_queue (struct rt_processor* self, struct rt_private_queue** result);
-EIF_NATURAL_64 rt_processor_next_compensation_no (struct rt_processor* self);
 
 #endif /* _rt_processor_h_ */

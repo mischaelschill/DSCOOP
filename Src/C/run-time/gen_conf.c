@@ -126,7 +126,6 @@ doc:		<fixme>Shouldn't we use `egc_tup_dtype' instead?</fixme>
 doc:	</attribute>
 */
 rt_public EIF_TYPE_INDEX egc_any_dtype = INVALID_DTYPE; /* Precise value determined in init */
-rt_public EIF_TYPE_INDEX egc_eif_dscoop_proxy_dtype = INVALID_DTYPE; /* Precise value determined in init */
 rt_private EIF_TYPE_INDEX tuple_static_type = INVALID_DTYPE;
 
 /*----------------------------------------------*/
@@ -538,12 +537,6 @@ rt_shared void eif_gen_conf_init (EIF_TYPE_INDEX max_dtype)
 		{
 			tuple_static_type = dt;
 		}
-
-		if ((strcmp("DSCOOP_PROXY_OBJECT",cname)==0))
-		{
-			tuple_static_type = dt;
-		}
-
 	}
 
 	eif_gen_conf_thread_init();
@@ -738,17 +731,6 @@ rt_public uint32 eif_gen_count_with_dftype (EIF_TYPE_INDEX dftype)
 	gdp = eif_derivations [dftype];
 
 	return (gdp ? gdp->size : 0);
-}
-
-rt_public EIF_TYPE_INDEX eif_base_type (EIF_TYPE_INDEX ftype)
-{
-	REQUIRE("Valid type", dftype < eif_next_gen_id);
-
-	if (eif_derivations [ftype]) {
-		return eif_derivations [ftype]->base_dtype;
-	} else {
-		return ftype;
-	}
 }
 
 /*------------------------------------------------------------------*/

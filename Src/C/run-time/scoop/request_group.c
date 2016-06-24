@@ -43,8 +43,6 @@ doc:<file name="request_group.c" header="rt_request_group.h" version="$Id$" summ
 #include "rt_processor.h"
 
 #include "rt_vector.h"
-#include "rt_dscoop.h"
-#include "rt_bc_reader.h"
 
 /* We can reuse some of the functions in rt_vector.h */
 RT_DECLARE_VECTOR_SIZE_FUNCTIONS (rt_request_group, struct rt_private_queue*)
@@ -56,25 +54,14 @@ rt_private rt_inline void bubble_sort (struct rt_private_queue** area, size_t co
 {
 	int right_boundary = ((int) count)-1;
 	int swapped = 1, i;
-	EIF_NATURAL_64 this_nid = eif_dscoop_node_id ();
 
 	while (swapped == 1) {
 		swapped = 0;
 		for (i = 0; i < right_boundary; ++i) {
-			EIF_NATURAL_64 left_nid = area [i]->supplier->connection ? 
-				area [i]->supplier->connection->remote_nid : 
-				this_nid;
-			EIF_NATURAL_64 right_nid = area [i + 1]->supplier->connection ? 
-				area [i + 1]->supplier->connection->remote_nid : 
-				this_nid;
-			
-			EIF_SCP_PID left_pid = area [i]->supplier->pid;
-			EIF_SCP_PID right_pid = area [i + 1]->supplier->pid;
-			
-			if (left_nid > right_nid || (left_nid == right_nid && left_pid > right_pid)) {
+			if (area [i]->supplier->pid > area [i+1]->supplier->pid) {
 				struct rt_private_queue* tmp = area [i];
-				area [i] = area [i + 1];
-				area [i + 1] = tmp;
+				area [i] = area [i+1];
+				area [i+1] = tmp;
 				swapped = 1;
 			}
 		}
@@ -202,17 +189,10 @@ doc:	</routine>
 */
 rt_shared void rt_request_group_lock (struct rt_request_group* self)
 {
-	rt_request_group_prelock (self);
-	rt_request_group_postlock (self);
-
-	ENSURE ("sorted", self->is_sorted);
-	ENSURE ("locked", self->is_locked);
-}
-
-rt_shared void rt_request_group_prelock (struct rt_request_group* self)
-{
+	struct rt_private_queue* l_queue = NULL;
 	size_t i = 0;
 	size_t l_count = rt_request_group_count (self);
+	EIF_BOOLEAN l_has_passive = EIF_FALSE;
 
 	REQUIRE ("self_not_null", self);
 	REQUIRE ("not_locked", !self->is_locked);
@@ -228,28 +208,12 @@ rt_shared void rt_request_group_prelock (struct rt_request_group* self)
 		self->is_sorted = 1;
 	}
 
-	struct eif_dscoop_message message;
-	struct eif_dscoop_connection* connection = NULL;
-	EIF_BOOLEAN error = EIF_FALSE;
-	eif_dscoop_message_init (&message, S_INVALID, 0);
-	
-	EIF_BOOLEAN requires_prelock = EIF_FALSE;
-	for (i = 0; i < l_count && !requires_prelock; ++i) {
-		struct rt_processor* l_supplier = rt_request_group_item (self, i)->supplier;
-		if (connection && connection != l_supplier->connection) {
-			requires_prelock = EIF_TRUE;
-		}
-	}
-/* TODO: Somehow get this optimization together with D-SCOOP
-	struct rt_private_queue* l_queue = NULL;
-	EIF_BOOLEAN l_has_passive = EIF_FALSE;
-
- * 	First we lock all passive regions.
+	/* First we lock all passive regions. */
 	for (i=0; i < l_count; ++i) {
 		l_queue = rt_request_group_item (self, i);
 		if (l_queue->supplier->is_passive_region) {
-				* We only register a blocking operation with the GC if it's really necessary,
-				 * since this is a somewhat costly operation. *
+				/* We only register a blocking operation with the GC if it's really necessary,
+				 * since this is a somewhat costly operation. */
 			if (!l_has_passive) {
 				l_has_passive = EIF_TRUE;
 				EIF_ENTER_C;
@@ -258,111 +222,35 @@ rt_shared void rt_request_group_prelock (struct rt_request_group* self)
 		}
 	}
 
-		* Synchronize with the GC again. *
+		/* Synchronize with the GC again. */
 	if (l_has_passive) {
 		EIF_EXIT_C;
 		RTGC;
 	}
 
-*/
-
 		/* Temporarily lock the queue-of-queue of all suppliers. */
-		/* Add all private queues to the queue-of-queues */
 	for (i = 0; i < l_count; ++i) {
-		struct rt_processor* l_supplier = rt_request_group_item (self, i)->supplier;
-		EIF_ENTER_C;
-		RT_TRACE (eif_pthread_mutex_lock (l_supplier->queue_of_queues_mutex));
-		EIF_EXIT_C;
+		l_queue = rt_request_group_item (self, i);
+		RT_TRACE (eif_pthread_mutex_lock (l_queue->supplier->queue_of_queues_mutex));
+	}
 
-		struct rt_private_queue *q = rt_request_group_item (self, i);
-		connection = l_supplier->connection;
-		if (connection) 
-		{
-			EIF_NATURAL_64 nid = connection->remote_nid;
-			if (q->lock_depth == 0) {
-				//TODO: Check whether a prelock is necessary, if it is not, don't do the following
-				if (eif_dscoop_message_recipient (&message) != nid) {
-					eif_dscoop_message_reset (&message, S_PRELOCK, nid);
-					eif_dscoop_message_add_natural_argument(&message, self->client->pid);
-				}
-				eif_dscoop_message_add_natural_argument(&message, q->supplier->remote_pid);
-			}
-			//Send the message if next supplier is on a different node, or there is not next supplier
-			if (i+1 >= l_count || rt_request_group_item (self, i+1)->supplier->connection != connection) {
-				if (eif_dscoop_message_send_receive (&message) || !eif_dscoop_message_ok (&message)){
-					error = EIF_TRUE;
-				}
-				//TODO: We need to unlock everything here on error. 
-				//This means send LOCK and immediate UNLOCK messages to the previous
-				//connections, remote added private queues and unlock the qoqs
-			}
-		} else {
-			rt_private_queue_lock (q, self->client);
+		/* Add all private queues of active regions to the queue-of-queues */
+	for (i = 0; i < l_count; ++i) {
+		l_queue = rt_request_group_item (self, i);
+		if (!l_queue->supplier->is_passive_region) {
+			rt_private_queue_lock (l_queue, self->client);
 		}
 	}
-	eif_dscoop_message_dispose (&message);
-	
-	if (error) {
-		eraise ("Failed to send prelock message.", EN_PROG);
-	}
 
-	ENSURE ("sorted", self->is_sorted);
-}
-
-rt_shared void rt_request_group_postlock (struct rt_request_group* self)
-{
-	REQUIRE ("sorted", self->is_sorted);
-
-	size_t i, l_count = rt_request_group_count (self);
-	
-	struct eif_dscoop_message message;
-	struct eif_dscoop_connection* connection = NULL;
-	EIF_BOOLEAN error = EIF_FALSE;
-	EIF_BOOLEAN send = EIF_FALSE;
-	eif_dscoop_message_init (&message, S_INVALID, 0);
-	
 		/* Release the queue-of-queue locks. */
 	for (i = 0; i < l_count; ++i) {
-		struct rt_private_queue *q = rt_request_group_item (self, i);
-		struct rt_processor* l_supplier = q->supplier;
-		RT_TRACE (eif_pthread_mutex_unlock (l_supplier->queue_of_queues_mutex));
-	
-		connection = q->supplier->connection;
-		if (connection) {
-			EIF_NATURAL_64 nid = connection->remote_nid;
-			if (q->lock_depth == 0) {
-				if (eif_dscoop_message_recipient (&message) != nid) {
-					eif_dscoop_message_init(&message, S_LOCK, nid);
-					eif_dscoop_message_add_natural_argument(&message, self->client->pid);
-					send = EIF_TRUE;
-				}
-			} 
-			//TODO: Check whether a prelock was necessary, if it was not, add the remote pid
-			//eif_dscoop_message_add_natural_argument(&message, q->supplier->remote_pid);
-			//Send the message if next supplier is on a different node, or there is not next supplier
-			if (send && (i+1 >= l_count || rt_request_group_item (self, i+1)->supplier->connection != connection)) {
-				send = EIF_FALSE;
-				if (eif_dscoop_message_send (&message)){
-					error = EIF_TRUE;
-				}
-				//TODO: We need to unlock everything here on error. 
-				//This means send LOCK and immediate UNLOCK messages to the previous
-				//connections, remote added private queues and unlock the qoqs
-			}
-			if (q->lock_depth == 0) {
-				q->synced = EIF_FALSE;
-			} 
-			q->lock_depth++;
-		}
-	}
-	eif_dscoop_message_dispose (&message);
-
-	if (error) {
-		eraise ("Failed to send lock message.", EN_PROG);
+		l_queue = rt_request_group_item (self, i);
+		RT_TRACE (eif_pthread_mutex_unlock (l_queue->supplier->queue_of_queues_mutex));
 	}
 
 	self->is_locked = 1;
 
+	ENSURE ("sorted", self->is_sorted);
 	ENSURE ("locked", self->is_locked);
 }
 
@@ -379,62 +267,17 @@ doc:	</routine>
 rt_shared void rt_request_group_unlock (struct rt_request_group* self, EIF_BOOLEAN is_wait_condition_failure)
 {
 	size_t l_count = rt_request_group_count (self);
+	int i = (int) l_count - 1;
 
 	REQUIRE ("self_not_null", self);
 	REQUIRE ("lock_called", self->is_sorted);
 	REQUIRE ("locked", self->is_locked);
 
-	if (self->is_locked) {
-		EIF_INTEGER_32 error = 0;
-			/* Unlock in the opposite order that they were locked */
-		struct eif_dscoop_connection * involved_connections[8];
-		unsigned involved_connections_count = 0;
-		EIF_BOOLEAN found = EIF_FALSE;
-
-		for (int i = (int) l_count - 1; i >= 0; --i) {
-			struct rt_private_queue* queue = rt_request_group_item (self, i);
-			struct eif_dscoop_connection* connection = queue->supplier->connection;
-			if (connection) {
-				//TODO: Move this code to the private queue
-				
-				queue->lock_depth--;
-				if (queue->lock_depth == 0) {
-					for (unsigned j = 0; !found && j < involved_connections_count; j++) {
-						if (involved_connections[j] == connection) {
-							found = EIF_TRUE;
-						}
-					}
-					if (!found) {
-						involved_connections[involved_connections_count] = connection;
-						struct eif_dscoop_message message;
-						if (is_wait_condition_failure) {
-							eif_dscoop_message_init(&message, S_AWAIT, connection->remote_nid);
-						} else {
-							eif_dscoop_message_init(&message, S_UNLOCK, connection->remote_nid);
-						}
-						eif_dscoop_message_add_natural_argument(&message, self->client->pid);
-						if (eif_dscoop_message_send (&message)) {
-							error = -2;
-						}
-						eif_dscoop_message_dispose (&message);
-					}
-					queue->synced = EIF_FALSE;
-				}
-			} else {
-				rt_private_queue_unlock (queue, is_wait_condition_failure);
-			}
-		}
-		self->is_locked = 0;
-		
-		if (error) {
-			// TODO: Don't know whether this is a good idea, but otherwise we
-			// never wake up the client
-			if (is_wait_condition_failure) {
-				RT_TRACE (eif_pthread_mutex_unlock (self->client->wait_condition_mutex));
-			}
-			eraise ("Failed to send unlock message.", EN_PROG);
-		}
- 	}
+		/* Unlock in the opposite order that they were locked */
+	for (; i >= 0; --i) {
+		rt_private_queue_unlock (rt_request_group_item (self, i), is_wait_condition_failure);
+	}
+	self->is_locked = 0;
 
 	ENSURE ("not_locked", !self->is_locked);
 }
