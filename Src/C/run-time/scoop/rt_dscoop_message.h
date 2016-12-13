@@ -27,6 +27,7 @@ enum eif_dscoop_message_subject {
 	S_UNLOCK = 103,
 	S_AWAIT = 104,
 	S_READY = 105,
+	S_PASS = 106,
 	S_CALL = 111,
 	S_QCALL = 112,
 	S_SCALL = 113
@@ -108,6 +109,7 @@ ssize_t eif_dscoop_message_parse (struct eif_dscoop_message * message, const cha
 EIF_INTEGER_32 eif_dscoop_message_send (struct eif_dscoop_message * message);
 
 // Send the given message and then wait for a reply
+// The reply is put into the message argument
 EIF_INTEGER_32 eif_dscoop_message_send_receive (struct eif_dscoop_message *message);
 
 EIF_TYPED_VALUE eif_dscoop_message_get_value_argument (struct eif_dscoop_message * message, EIF_NATURAL_8 n);

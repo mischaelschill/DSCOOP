@@ -281,9 +281,9 @@ rt_shared void rt_request_group_prelock (struct rt_request_group* self)
 			EIF_NATURAL_64 nid = connection->remote_nid;
 			if (q->lock_depth == 0) {
 				//TODO: Check whether a prelock is necessary, if it is not, don't do the following
+				//If this is the first argument on the supplier node, create a new message
 				if (eif_dscoop_message_recipient (&message) != nid) {
 					eif_dscoop_message_reset (&message, S_PRELOCK, nid);
-					eif_dscoop_message_add_natural_argument(&message, self->client->pid);
 				}
 				eif_dscoop_message_add_natural_argument(&message, q->supplier->remote_pid);
 			}
@@ -291,7 +291,7 @@ rt_shared void rt_request_group_prelock (struct rt_request_group* self)
 			if (i+1 >= l_count || rt_request_group_item (self, i+1)->supplier->connection != connection) {
 				if (eif_dscoop_message_send_receive (&message) || !eif_dscoop_message_ok (&message)){
 					error = EIF_TRUE;
-				}
+				} 
 				//TODO: We need to unlock everything here on error. 
 				//This means send LOCK and immediate UNLOCK messages to the previous
 				//connections, remote added private queues and unlock the qoqs
@@ -342,8 +342,12 @@ rt_shared void rt_request_group_postlock (struct rt_request_group* self)
 			//Send the message if next supplier is on a different node, or there is not next supplier
 			if (send && (i+1 >= l_count || rt_request_group_item (self, i+1)->supplier->connection != connection)) {
 				send = EIF_FALSE;
-				if (eif_dscoop_message_send (&message)){
+				if (eif_dscoop_message_send_receive (&message) || !eif_dscoop_message_ok (&message)){
 					error = EIF_TRUE;
+				} else {
+					// locking successful, we got a private queue!
+					long qid = eif_dscoop_message_get_natural_argument (&message, 0);
+					q->remote_qid = qid;
 				}
 				//TODO: We need to unlock everything here on error. 
 				//This means send LOCK and immediate UNLOCK messages to the previous

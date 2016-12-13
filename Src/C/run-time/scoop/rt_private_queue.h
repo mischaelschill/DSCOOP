@@ -79,6 +79,9 @@ struct rt_private_queue {
 		/* Debugging part */
 	struct rt_processor *client;	
 
+		/* D-SCOOP part */
+	EIF_NATURAL_64 remote_qid;
+	
 	int lock_depth;
 	EIF_BOOLEAN synced;
 #ifdef WORKBENCH

@@ -74,6 +74,7 @@ rt_shared int rt_private_queue_init (struct rt_private_queue* self, struct rt_pr
 	self->supplier = a_supplier;
 	self->synced = EIF_FALSE;
 	self->lock_depth = 0;
+	self->remote_qid = 0;
 	rt_macro_set_saved_result (self, NULL);
 
 	error = rt_message_channel_init (&self->channel, 512);

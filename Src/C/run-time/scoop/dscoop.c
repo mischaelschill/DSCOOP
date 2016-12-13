@@ -87,6 +87,13 @@ RT_DECLARE_VECTOR (eif_pid_list, EIF_DSCOOP_PID)
 #undef RT_CHT_KEY_TYPE
 #undef RT_CHT_VALUE_TYPE
 
+union eif_dscoop_queue_id {
+	struct {
+		EIF_SCP_PID proxy, supplier;
+	} internal;
+	EIF_NATURAL_64 external;
+};		
+		
 EIF_BOOLEAN eif_dscoop_initialized = EIF_FALSE;
 
 struct eif_dscoop_connection_table eif_dscoop_connections = {0};
@@ -95,11 +102,18 @@ struct eif_dscoop_proxy_processors_table eif_dscoop_proxy_processors_table = {0}
 struct eif_dscoop_object_oid_table eif_dscoop_object_oid_table = {0};
 struct eif_dscoop_export_table eif_dscoop_export_table = {0};
 
+// Mutex protecting the connections table
 EIF_MUTEX_TYPE *conn_mutex;
+// Mutex protecting the proxy objects table
 EIF_MUTEX_TYPE *proxyobj_mutex;
+// Mutex protecting the table with the proxy processors
 EIF_MUTEX_TYPE *proxyproc_mutex;
+// Mutex protecting the table with the exported objects 
+//		(objects in use by other processors)
 EIF_MUTEX_TYPE *exported_mutex;
 
+// After garbage collection, the oid table needs to be rehashed
+// This variable indicates whether this has already been done
 EIF_BOOLEAN object_oid_table_need_rehash = EIF_FALSE;
 
 // Runtime constants
@@ -113,20 +127,28 @@ EIF_BOOLEAN eif_dscoop_print_debug_messages = EIF_FALSE;
 
 static EIF_TYPED_VALUE rt_dscoop_scratch_result;
 
-union overhead* HEADERf(EIF_REFERENCE p)	{
-	return (((union overhead *) (p))-1);	/* Fetch header address */
-}
-
-EIF_BOOLEAN is_forwarded (EIF_REFERENCE p) {
-	union overhead* zone = HEADER(p);
-	if (zone->ov_size & B_FWD)
-		return EIF_TRUE;
-	return EIF_FALSE;
-}
-
-EIF_REFERENCE eif_accessf (EIF_OBJECT obj) {
-	return eif_access (obj);
-}
+// These are some functions mimicking marcos for debugging
+//union overhead* HEADERf(EIF_REFERENCE p)	{
+//	return (((union overhead *) (p))-1);	/* Fetch header address */
+//}
+//
+//EIF_BOOLEAN is_forwarded (EIF_REFERENCE p) {
+//	union overhead* zone = HEADER(p);
+//	if (zone->ov_size & B_FWD)
+//		return EIF_TRUE;
+//	return EIF_FALSE;
+//}
+//
+//EIF_REFERENCE eif_accessf (EIF_OBJECT obj) {
+//	return eif_access (obj);
+//}
+//EIF_TYPE_INDEX Dtype_fun(EIF_REFERENCE x) {
+//	return Dtype (x);
+//}
+//
+//EIF_TYPE_INDEX Dftype_fun(EIF_REFERENCE x) {
+//	return Dftype (x);
+//}
 
 /*
 doc:	<routine name="rt_mark_ref" export="private">
@@ -142,14 +164,6 @@ rt_private void rt_mark_ref (MARKER marking, EIF_REFERENCE *ref)
 	REQUIRE("marking_not_null", marking);
 	REQUIRE("ref_not_null", ref);
 	*ref = marking (ref);
-}
-
-EIF_TYPE_INDEX Dtype_fun(EIF_REFERENCE x) {
-	return Dtype (x);
-}
-
-EIF_TYPE_INDEX Dftype_fun(EIF_REFERENCE x) {
-	return Dftype (x);
 }
 
 // DSCOOP
@@ -225,7 +239,7 @@ rt_public void eif_dscoop_log_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID
 	} else {
 		eif_dscoop_message_init (&message, S_CALL, supplier->connection->remote_nid);
 	}
-
+	
 	int error = T_OK;
 	error = rt_queue_cache_retrieve (&client->cache, supplier, &pq);
 	if (error != T_OK) {
@@ -245,21 +259,46 @@ rt_public void eif_dscoop_log_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID
 		EIF_NATURAL_32 oid;
 	};
 	
+	struct lock {
+		EIF_NATURAL_64 nid;
+		EIF_NATURAL_32 pid;
+		EIF_NATURAL_64 qid;
+	};
+	
 	struct foreign_reference* foreign_references = malloc (data->count * sizeof (struct foreign_reference));
 	unsigned foreign_references_count = 0;
+	struct lock* locks_to_pass = malloc (data->count * sizeof (struct lock));
+	unsigned locks_to_pass_count = 0;
 	
 	for (unsigned i = 0; i < data->count; i++) {
+		
 		eif_dscoop_message_add_value_argument (&message, &data->argument[i]);
 		if (data->argument[i].item.r && data->argument[i].type == SK_REF && Dtype(data->argument[i].item.r) == eif_get_eif_dscoop_proxy_dtype()) {
 			EIF_NATURAL_64 nid = eif_dscoop_nid_of_proxy (data->argument[i].item.r);
 			if (nid != eif_dscoop_node_id () && nid != supplier->connection->remote_nid) {
+				// This is an object not beloning to the client or the supplier node. 
+				// We add it to the foreign references
 				foreign_references[foreign_references_count++] = (struct foreign_reference){
 					nid, eif_dscoop_oid_of_proxy (data->argument[i].item.r)};
 				struct eif_dscoop_connection* connection = eif_dscoop_get_connection (nid);
+				// We also add the node as an argument to the message so that the supplier can auto-connect
 				if (connection && connection->node_address) {
 					eif_dscoop_message_add_node_argument (&message, nid, connection->node_address, connection->node_port);
 				}
 				eif_dscoop_release_connection (connection);
+			}
+			
+			if (!eif_scoop_is_uncontrolled (
+						client_processor_id, 
+						client_region_id, 
+						RTS_PID(data->argument[i].item.r)
+					)
+				) {
+				locks_to_pass[locks_to_pass_count++] = (struct lock){
+					nid, 
+					eif_dscoop_pid_of_proxy (data->argument[i].item.r),
+					eif_dscoop_qid_of_proxy (data->argument[i].item.r)
+				};
 			}
 		}
 	}
@@ -272,7 +311,7 @@ rt_public void eif_dscoop_log_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID
 	RT_GC_WEAN_N (refargs);
 	refargs = 0;
 	
-	// TODO: First send all messages, then receive them
+	// We need to send the SHARE messages to all involved nodes
 	for (unsigned i = 0; i < foreign_references_count; i++) {
 		EIF_NATURAL_64 nid = foreign_references[i].nid;
 		EIF_NATURAL_32 oid = foreign_references[i].oid;
@@ -287,6 +326,22 @@ rt_public void eif_dscoop_log_call (EIF_SCP_PID client_processor_id, EIF_SCP_PID
 	}
 	free(foreign_references);
 	
+	// We need to send the PASS messages to all involved nodes
+	for (unsigned i = 0; i < foreign_references_count; i++) {
+		EIF_NATURAL_64 nid = foreign_references[i].nid;
+		EIF_NATURAL_32 oid = foreign_references[i].oid;
+		struct eif_dscoop_message pass_msg;
+		eif_dscoop_message_init (&pass_msg, S_PASS, nid);
+		eif_dscoop_message_add_natural_argument (&pass_msg, oid);
+		eif_dscoop_message_add_natural_argument (&pass_msg, supplier->connection->remote_nid);
+		if (eif_dscoop_message_send_receive (&share_msg) || !eif_dscoop_message_ok (&share_msg)) {
+			error = EIF_TRUE;
+		}
+		eif_dscoop_message_dispose (&share_msg);
+	}
+	free(foreign_references);
+
+
 	if (error != T_OK) {
 		eif_dscoop_message_dispose (&message);
 		eraise ("Error passing remote reference", EN_PROG);
@@ -507,12 +562,15 @@ rt_public void eif_dscoop_deregister_connection (EIF_NATURAL_64 remote_nid)
 	eif_dscoop_remove_connection (remote_nid);
 }
 
+// Retrieves the specified connection and increases its reference count
+// Call eif_dscoop_release_connection after the connection is no longer needed!
 struct eif_dscoop_connection* eif_dscoop_get_connection (EIF_NATURAL_64 remote_nid)
 {
 	eif_pthread_mutex_lock (conn_mutex);
 	struct eif_dscoop_connection* result = NULL;
 	if (eif_dscoop_connection_table_has (&eif_dscoop_connections, remote_nid)) {
 		result = eif_dscoop_connection_table_item (&eif_dscoop_connections, remote_nid);
+		result->reference_count++;
 	}
 	eif_pthread_mutex_unlock (conn_mutex);
 	return result;
@@ -605,7 +663,7 @@ rt_public EIF_REFERENCE eif_dscoop_get_proxy (EIF_NATURAL_64 remote_nid, EIF_NAT
 	
 	EIF_OBJECT weak_result = eif_dscoop_proxy_table_item (&eif_dscoop_proxy_table, ref);
 	if (weak_result) {
-		result = eif_accessf (weak_result);
+		result = eif_access (weak_result);
 		if (!result) {
 			// There was a proxy object of the correct type, but it since got collected
 			// So we remove the entry from the table
@@ -1121,6 +1179,13 @@ void eif_dscoop_add_call_from_message (struct rt_processor* self, struct eif_dsc
 	// Finally, making the call
 	if (!error) {
 		cd->is_synchronous = expects_synchronization;
+		// Why do we not care about the queue id?
+		// Simple: SCOOP in EiffelStudio expects all
+		// separate callbacks to be synchronous.
+		// It also has exactly one queue per pair of
+		// processors.
+		// Ergo: this will always enqueue in the 
+		// correct queue.
 		eif_scoop_log_call (self->pid, self->pid, cd);
 		
 		// Returning the result, if needed
@@ -1236,18 +1301,25 @@ void eif_dscoop_process_message (struct rt_processor* self, struct eif_dscoop_me
 		break;
 		case S_LOCK:
 			//TODO: Make sure the lock is eventually unlocked, even with the connection still open, which means adding timeouts.
-			// Request: LOCK <client id> <private queue>+
-			// Reply: OK
+			// Request: LOCK <client pid> <supplier pid>+
+			// Reply: OK <queue id>+
+			// The queue ids in the answer are actually just combinations
+			// of the client pid and the supplier pid.
 			if (eif_dscoop_message_argument_count (message) >= 2) {
 				int error = T_OK;
 				rt_processor_request_group_stack_extend (self);
 				struct rt_request_group* rg = rt_processor_request_group_stack_last (self);
+				
+				union eif_dscoop_queue_id *queues = 
+					malloc (eif_dscoop_message_argument_count (message) * sizeof (union eif_dscoop_queue_id));
 				for (EIF_NATURAL_8 i = 1; i < eif_dscoop_message_argument_count (message) && !error; i++) {
 					// TODO: Make sure the processor actually has exported objects!
 					EIF_SCP_PID supplier_pid = eif_dscoop_message_get_natural_argument (message, i);
 					struct rt_processor* supplier = rt_lookup_processor (supplier_pid);
 					if (supplier) {
 						rt_request_group_add (rg, supplier);
+						queues[i].internal.proxy = self->pid;
+						queues[i].internal.supplier = supplier;
 					} else {
 						error = 1;
 						break;
@@ -1260,7 +1332,12 @@ void eif_dscoop_process_message (struct rt_processor* self, struct eif_dscoop_me
 					rt_request_group_set_anchor (rg, message->anchor);
 					rt_request_group_lock (rg);
 					eif_dscoop_message_reply (message, S_OK);
+					for (EIF_NATURAL_8 i = 1; i < eif_dscoop_message_argument_count (message) && !error; i++) {
+						// TODO: Make sure the processor actually has objects exported to the client!
+						eif_dscoop_message_add_natural_argument (queues[i].external);
+					}	
 				}
+				free (queues);
 			} else if (eif_dscoop_message_argument_count (message) == 1) {
 				struct rt_request_group* rg = rt_processor_request_group_stack_last (self);
 				if (!rg->is_locked && rg->is_sorted) {
@@ -1473,7 +1550,7 @@ EIF_BOOLEAN rt_dscoop_message_handle_one (struct rt_processor* self, struct eif_
 					eif_dscoop_message_dispose (message);
 					free (message);
 				} else {
-					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_accessf (message->anchor)));
+					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_access (message->anchor)));
 					rt_message_channel_send (&proc->queue_of_queues, SCOOP_DSCOOP_MESSAGE, self, NULL, NULL, message);
 
 					// It is possible that a PRELOCK is sent while we still wait,
@@ -1503,7 +1580,7 @@ EIF_BOOLEAN rt_dscoop_message_handle_one (struct rt_processor* self, struct eif_
 					eif_dscoop_message_dispose (message);
 					free (message);
 				} else {
-					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_accessf (message->anchor)));
+					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_access (message->anchor)));
 					rt_message_channel_send (&proc->queue_of_queues, SCOOP_DSCOOP_MESSAGE, self, NULL, NULL, message);
 				}
 			} else {
@@ -1527,7 +1604,7 @@ EIF_BOOLEAN rt_dscoop_message_handle_one (struct rt_processor* self, struct eif_
 					eif_dscoop_message_dispose (message);
 					free (message);
 				} else {
-					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_accessf (message->anchor)));
+					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_access (message->anchor)));
 					rt_message_channel_send (&proc->queue_of_queues, SCOOP_DSCOOP_MESSAGE, self, NULL, NULL, message);
 				}
 			} else {
@@ -1551,7 +1628,7 @@ EIF_BOOLEAN rt_dscoop_message_handle_one (struct rt_processor* self, struct eif_
 					eif_dscoop_message_dispose (message);
 					free (message);
 				} else {
-					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_accessf (message->anchor)));
+					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_access (message->anchor)));
 					rt_message_channel_send (&proc->queue_of_queues, SCOOP_DSCOOP_MESSAGE, self, NULL, NULL, message);
 				}
 			} else {
@@ -1578,7 +1655,7 @@ EIF_BOOLEAN rt_dscoop_message_handle_one (struct rt_processor* self, struct eif_
 					eif_dscoop_message_dispose (message);
 					free (message);
 				} else {
-					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_accessf (message->anchor)));
+					struct rt_processor* proc = rt_get_processor (RTS_PID (eif_access (message->anchor)));
 					rt_message_channel_send (&proc->queue_of_queues, SCOOP_DSCOOP_MESSAGE, self, NULL, NULL, message);
 				}
 			} else {
@@ -1639,7 +1716,7 @@ void eif_dscoop_transaction_revert (struct rt_processor* self)
 			struct eif_dscoop_compensation_list* registered = &q->compensations;
 			for (ssize_t k = eif_dscoop_compensation_list_count (registered) - 1; k >= 0; k--) {
 				call_data* l_scoop_call_data = NULL;
-				RTS_AC (0, eif_accessf(eif_dscoop_compensation_list_item (registered, k).agent));
+				RTS_AC (0, eif_access(eif_dscoop_compensation_list_item (registered, k).agent));
 #ifdef WORKBENCH
 				l_scoop_call_data->routine_id = routineid;
 #else
@@ -1655,7 +1732,7 @@ void eif_dscoop_transaction_revert (struct rt_processor* self)
 //	//qsort (list.area, list.count, sizeof (struct eif_dscoop_compensation), (__compar_fn_t) eif_dscoop_compensation_compare);
 //	// Call agents in reverse order
 //	for (ssize_t i = list.count - 1; i >= 0; i--) {
-//		p (eif_accessf(list.area[i].agent));
+//		p (eif_access(list.area[i].agent));
 //	}
 }
 
@@ -1770,7 +1847,7 @@ void rt_dscoop_deregister_proxy_processor (EIF_DSCOOP_NID nid, EIF_DSCOOP_PID pi
 	struct eif_dscoop_proxy_table_iterator it = 
 		eif_dscoop_proxy_table_iterator (&eif_dscoop_proxy_table);
 	while (!eif_dscoop_proxy_table_iterator_after (&it)) {
-		if (!eif_accessf (eif_dscoop_proxy_table_iterator_item (&it)) ||
+		if (!eif_access (eif_dscoop_proxy_table_iterator_item (&it)) ||
 				(eif_dscoop_proxy_table_iterator_key (&it).nid == nid &&
 				eif_dscoop_proxy_table_iterator_key (&it).pid == pid)) {
 			eif_wean (eif_dscoop_proxy_table_iterator_item (&it));
